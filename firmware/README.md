@@ -41,10 +41,10 @@ Packaging refuses to overwrite an existing bundle directory; choose a fresh
 flash, and verify it. Source builds are development builds until tested and
 released; do not call them an official downloaded release.
 
-The GitHub build workflow builds every supported target and attaches installation bundles
-to successful runs. Maintainers publish tested bundles together in a GitHub
-Release, with release notes stating the exact boards/revisions tested. CI never
-publishes automatically and never connects to a physical device.
+This personal fork intentionally has no GitHub Actions workflow. Build and
+package every supported target locally with the commands above before publishing
+a release. Release notes should state the exact boards/revisions tested; a local
+build never substitutes for physical-device validation.
 
 ## Talk to Taby
 
@@ -152,8 +152,8 @@ The supported first-party integration is in the Taby app.
 3. Add an `assets/BOARD/` pack suited to its resolution and flash capacity, or
    set the board's `assets` alias in `boards.json` when revisions share a pack.
    Select it in `main/CMakeLists.txt`. Keep semantic animation IDs compatible.
-4. Extend the build matrix in `.github/workflows/build.yml` and installation
-   validation if the new chip/layout differs from the current ESP32-S3 contract.
+4. Extend installation validation and the documented local build list if the new
+   chip/layout differs from the current ESP32-S3 contract.
 5. Verify a fresh build, USB install/recovery, display, touch, and app commands on
    real hardware. Record results in the PR before adding it to supported displays.
 

@@ -187,3 +187,14 @@ alone does not prove that the display or artwork is correct.
   aligned with upstream updates.
 - Added the no-history-rewrite upstream synchronization procedure to
   `memory.md`.
+
+### Main-only personal workflow
+
+- The owner requested that the updated-board firmware live directly on the
+  personal fork's `main` branch, with no GitHub Actions and no long-lived feature
+  branch.
+- Submitted cancellation requests for the push and pull-request workflow runs.
+- Removed `.github/workflows/build.yml` from the personal changes and updated
+  the documentation to require local checks/builds instead.
+- Simplified the upstream update procedure: merge `upstream/main` into personal
+  `main`, verify locally, and push `origin main` without rewriting history.

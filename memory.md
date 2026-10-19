@@ -14,8 +14,8 @@ computer or improve the project later.
 - Repository: `TRIIIS-LABS/firmware-taby`, branch `main`.
 - Personal fork: `gopichandbusam/firmware-taby`. The personal fork is local
   remote `origin`; the original TRIIIS-LABS repository is remote `upstream`.
-- Custom work branch: `feature/waveshare-amoled-1.64-v2`. Keep personal `main`
-  aligned with `upstream/main`; do not develop directly on `main`.
+- Personal development happens directly on `main`; the owner does not want
+  feature branches or GitHub Actions in this fork.
 - Connected hardware was detected by macOS as an ESP32-S3 native USB
   Serial/JTAG device. The exact `/dev/cu.usbmodem...` name is machine-specific
   and may change after reset or when moving to another computer.
@@ -96,21 +96,20 @@ once:
 git remote add upstream https://github.com/TRIIIS-LABS/firmware-taby.git
 ```
 
-Bring new upstream commits into the personal fork and then into this feature
-branch without rewriting published history:
+Bring new upstream commits into personal `main` without rewriting published
+history:
 
 ```sh
 git fetch upstream
 git switch main
-git merge --ff-only upstream/main
+git merge upstream/main
 git push origin main
-git switch feature/waveshare-amoled-1.64-v2
-git merge main
-git push origin feature/waveshare-amoled-1.64-v2
 ```
 
-If either merge reports a conflict, stop and review the conflicting firmware
-changes before pushing. Never force-push merely to bypass an upstream conflict.
+If the merge reports a conflict, stop and review the conflicting firmware
+changes before pushing. Preserve the `amoled-1.64-v2` target and keep the
+personal fork's GitHub Actions workflow absent unless the owner changes this
+policy. Never force-push merely to bypass an upstream conflict.
 
 ## Safety and repository hygiene
 
