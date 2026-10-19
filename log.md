@@ -198,3 +198,8 @@ alone does not prove that the display or artwork is correct.
   the documentation to require local checks/builds instead.
 - Simplified the upstream update procedure: merge `upstream/main` into personal
   `main`, verify locally, and push `origin main` without rewriting history.
+- Merged personal PR #1 into `main`, then deleted the temporary feature branch
+  locally and on GitHub.
+- Disabled GitHub Actions in the personal repository settings. The two runs
+  started before the policy change were cancelled; their historical records may
+  remain visible, but no workflow file or enabled Actions setting remains.

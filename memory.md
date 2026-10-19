@@ -11,11 +11,12 @@ computer or improve the project later.
 
 ## Current state
 
-- Repository: `TRIIIS-LABS/firmware-taby`, branch `main`.
-- Personal fork: `gopichandbusam/firmware-taby`. The personal fork is local
-  remote `origin`; the original TRIIIS-LABS repository is remote `upstream`.
+- Primary repository: `gopichandbusam/firmware-taby`, branch `main`. The
+  personal fork is local remote `origin`; the original
+  `TRIIIS-LABS/firmware-taby` repository is remote `upstream`.
 - Personal development happens directly on `main`; the owner does not want
-  feature branches or GitHub Actions in this fork.
+  feature branches or GitHub Actions in this fork. The workflow file is absent
+  and Actions are disabled in the personal repository settings.
 - Connected hardware was detected by macOS as an ESP32-S3 native USB
   Serial/JTAG device. The exact `/dev/cu.usbmodem...` name is machine-specific
   and may change after reset or when moving to another computer.
