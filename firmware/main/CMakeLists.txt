@@ -33,6 +33,11 @@ idf_component_register(
 if(TABY_HARDWARE_TARGET STREQUAL "round-1.32")
     target_compile_definitions(${COMPONENT_LIB} PRIVATE TABY_HARDWARE_ROUND_1_32=1)
     set(TABY_AMOLED_PACK_DIR "${CMAKE_CURRENT_LIST_DIR}/../../assets/round-1.32")
+elseif(TABY_HARDWARE_TARGET STREQUAL "amoled-1.64-v2")
+    # Waveshare calls the current PCB V1.1; this repository's target name follows
+    # the existing upstream V2-support branch. It moves LCD chip-select to GPIO46.
+    target_compile_definitions(${COMPONENT_LIB} PRIVATE TABY_HARDWARE_AMOLED_1_64_V2=1)
+    set(TABY_AMOLED_PACK_DIR "${CMAKE_CURRENT_LIST_DIR}/../../assets/amoled-1.64")
 else()
     set(TABY_AMOLED_PACK_DIR "${CMAKE_CURRENT_LIST_DIR}/../../assets/amoled-1.64")
 endif()

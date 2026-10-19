@@ -29,6 +29,14 @@ The app works on its own. Want Taby on your desk too? This repo has the
 [3. Connect to Taby](#connect-to-taby) →
 [4. Print a case](#a-home-for-your-taby)
 
+### Local work notes
+
+This checkout keeps a concise [current-state memory](memory.md) and a
+[chronological work log](log.md) so installation and later improvements can be
+continued on another computer. Update both when the hardware, firmware, app,
+or an important decision changes. Do not record credentials, tokens, private
+device identities, or personal logs in these public files.
+
 ---
 
 <a id="supported-displays"></a>
@@ -42,7 +50,7 @@ You'll need a supported board and a **USB data cable**.
 <td width="430" valign="top">
 <h3>Taby 1.64</h3>
 <p>The rectangular one.<br>280 × 456 AMOLED · 84 animations</p>
-<p><strong>Waveshare ESP32-S3-Touch-AMOLED-1.64</strong></p>
+<p><strong>Waveshare ESP32-S3-Touch-AMOLED-1.64</strong> (V1, plus a development target for the newer V1.1/V2 PCB)</p>
 <p><a href="https://www.waveshare.com/esp32-s3-touch-amoled-1.64.htm?&amp;aff_id=134369">Get the board ↗</a> &nbsp;·&nbsp; <a href="#a-home-for-your-taby">Print its case</a></p>
 </td>
 <td width="430" valign="top">
@@ -157,7 +165,7 @@ Humans and AI agents contribute through the same pull-request workflow.
 Fork, create a branch, make a focused change, and open a pull request. Read the
 firmware guide before editing. For firmware or tooling changes, run
 `python tools/check.py` and `python -m unittest discover -s tests -v`, then build
-both supported boards. State which physical board you tested; a build alone
+every supported target. State which physical board you tested; a build alone
 is not a hardware test.
 
 Keep existing USB/Bluetooth/Wi-Fi commands compatible. New boards need their

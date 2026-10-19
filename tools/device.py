@@ -100,7 +100,7 @@ def identify(actual):
                     "next_step": "Display dimensions conflict with the reported target. Resolve the mismatch before flashing."}
     return {**result, "status": "firmware_target", "board": target,
             "revision": profile["revision"], "evidence": "running_firmware_metadata",
-            "next_step": "Use this target for an update if the existing display is working correctly. This identifies the installed build, not an independent PCB revision measurement."}
+            "next_step": "Ask whether the screen works before reusing this target. A black screen can mean a 1.64 revision mismatch; check the PCB marking. This identifies the installed build, not an independent PCB revision measurement."}
 
 
 def main():

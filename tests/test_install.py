@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+import common
 from common import BOARDS, allowed_images, load_bundle
 from install import flash_command, verify_info
 
@@ -86,6 +87,55 @@ class BundleTests(unittest.TestCase):
         for field in actual:
             with self.subTest(field=field), self.assertRaises(ValueError):
                 verify_info({**actual, field: "wrong"}, self.manifest)
+
+    def test_v2_build_reuses_the_v1_asset_pack(self):
+        if not hasattr(common, "asset_dir"):
+            self.fail("V2 target needs a shared asset-pack resolver")
+        self.assertEqual(common.asset_dir("amoled-1.64-v2"),
+                         common.asset_dir("amoled-1.64"))
+        self.assertEqual(common.asset_dir("round-1.32").name, "round-1.32")
+
+
+def write_bundle(root, board):
+    profile = BOARDS[board]
+    manifest = {"schema": "taby-install-v1", "board": board,
+                "revision": profile["revision"], "chip": profile["chip"],
+                "flash_size_mb": profile["flash_size_mb"],
+                "firmware_version": "test", "assets_version": "test", "images": []}
+    for kind, (offset, _) in allowed_images(board).items():
+        content = (kind * 2).encode()
+        (root / f"{kind}.bin").write_bytes(content)
+        manifest["images"].append({"kind": kind, "file": f"{kind}.bin",
+                                   "offset": offset, "size": len(content),
+                                   "sha256": hashlib.sha256(content).hexdigest()})
+    (root / "manifest.json").write_text(json.dumps(manifest))
+    return manifest
+
+
+class RevisionTests(unittest.TestCase):
+    """The two 1.64 revisions share geometry but require different firmware."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+
+    def test_v1_and_v2_bundles_never_cross(self):
+        for built, selected in (("amoled-1.64", "amoled-1.64-v2"),
+                                ("amoled-1.64-v2", "amoled-1.64")):
+            with self.subTest(built=built, selected=selected):
+                write_bundle(self.root, built)
+                load_bundle(self.root, built)
+                with self.assertRaisesRegex(ValueError,
+                                            "Release board does not match selected board"):
+                    load_bundle(self.root, selected)
+
+    def test_v1_firmware_does_not_verify_a_v2_install(self):
+        manifest = write_bundle(self.root, "amoled-1.64-v2")
+        actual = {"hardware_target": "amoled-1.64",
+                  "firmware_version": "test", "assets_version": "test"}
+        with self.assertRaises(ValueError):
+            verify_info(actual, manifest)
 
 
 if __name__ == "__main__":

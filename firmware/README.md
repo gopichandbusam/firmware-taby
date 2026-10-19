@@ -17,6 +17,7 @@ From the repository root:
 python tools/check.py
 python -m unittest discover -s tests -v
 python tools/build.py amoled-1.64
+python tools/build.py amoled-1.64-v2
 python tools/build.py round-1.32
 ```
 
@@ -30,6 +31,7 @@ After a successful build, make a complete install bundle:
 
 ```sh
 python tools/package_release.py amoled-1.64
+python tools/package_release.py amoled-1.64-v2
 python tools/package_release.py round-1.32
 ```
 
@@ -39,10 +41,10 @@ Packaging refuses to overwrite an existing bundle directory; choose a fresh
 flash, and verify it. Source builds are development builds until tested and
 released; do not call them an official downloaded release.
 
-The GitHub build workflow builds both boards and attaches installation bundles
-to successful runs. Maintainers publish tested bundles together in a GitHub
-Release, with release notes stating the exact boards/revisions tested. CI never
-publishes automatically and never connects to a physical device.
+This personal fork intentionally has no GitHub Actions workflow. Build and
+package every supported target locally with the commands above before publishing
+a release. Release notes should state the exact boards/revisions tested; a local
+build never substitutes for physical-device validation.
 
 ## Talk to Taby
 
@@ -73,8 +75,10 @@ literal `|` separators, never `\|`. For example:
 UI/title_subtitle?demo:HELLO|FROM MY PROJECT
 ```
 
-Animation IDs are listed in `assets/BOARD/manifest.json`. Round and rectangle
-packs differ; inspect the selected pack before choosing an ID. `TABY:OK` means
+Animation IDs are listed in the asset pack's `manifest.json`. Most targets use
+`assets/BOARD`; `amoled-1.64-v2` aliases `assets/amoled-1.64` through
+`boards.json`. Round and rectangle packs differ; inspect the selected pack before
+choosing an ID. `TABY:OK` means
 the protocol accepted the command, not that a person verified the image.
 An animation ID (`a-z`, `0-9`, `_`, up to 80 characters, alone or as
 `intro>loop`) that this board has no clip for is ignored: the face keeps what it
@@ -145,22 +149,25 @@ The supported first-party integration is in the Taby app.
 2. Add isolated defaults and partitions under `targets/BOARD/` and wire the target
    into `CMakeLists.txt`. Add hardware initialization through the board adapter;
    do not change existing boards' pins to accommodate a new one.
-3. Add an `assets/BOARD/` pack suited to its resolution and flash capacity, and
-   select it in `main/CMakeLists.txt`. Keep semantic animation IDs compatible.
-4. Extend the build matrix in `.github/workflows/build.yml` and installation
-   validation if the new chip/layout differs from the current ESP32-S3 contract.
+3. Add an `assets/BOARD/` pack suited to its resolution and flash capacity, or
+   set the board's `assets` alias in `boards.json` when revisions share a pack.
+   Select it in `main/CMakeLists.txt`. Keep semantic animation IDs compatible.
+4. Extend installation validation and the documented local build list if the new
+   chip/layout differs from the current ESP32-S3 contract.
 5. Verify a fresh build, USB install/recovery, display, touch, and app commands on
    real hardware. Record results in the PR before adding it to supported displays.
 
-Do not infer board support from screen size or the ESP32 chip alone. Waveshare
-1.64 V2 needs its own reviewed pin mapping and hardware tests.
+Do not infer board support from screen size or the ESP32 chip alone. The newer
+Waveshare 1.64 V1.1/V2 PCB is the separate `amoled-1.64-v2` development target;
+see [its README](targets/amoled-1.64-v2/README.md).
 
 ## Assets and contributions
 
 `assets/BOARD/a/` contains the runtime GIF artwork; `icons/` contains Lucide-derived
 4-bit alpha icons. These checked-in packs are build inputs, not disposable build
 outputs. They are sufficient to reproduce the current firmware; private editing
-projects and app-only media are not needed.
+projects and app-only media are not needed. A target may alias another target's
+pack through its `boards.json` `assets` field; V2 currently reuses the V1 pack.
 
 When replacing an animation, update its catalog byte length and SHA-256, then
 the catalog's byte length/SHA-256 in the runtime manifest. Keep JSON line endings
