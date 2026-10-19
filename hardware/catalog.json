@@ -31,6 +31,17 @@
       "models": [],
       "status": "planned",
       "availability": "coming_soon"
+    },
+    {
+      "board": "amoled-1.64-v2",
+      "revision": "V2",
+      "display": {
+        "shape": "rectangle",
+        "width_px": 280,
+        "height_px": 456
+      },
+      "models": [],
+      "status": "prototype"
     }
   ]
 }

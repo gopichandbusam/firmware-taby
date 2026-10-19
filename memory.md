@@ -1,0 +1,124 @@
+# Taby project memory
+
+Last updated: 2026-10-19
+
+## Goal
+
+Install the official Physical Taby firmware on a connected Waveshare
+ESP32-S3-Touch-AMOLED-1.64, verify the display with an animation, and connect it
+to the Taby desktop app. Preserve enough context to continue on another
+computer or improve the project later.
+
+## Current state
+
+- Repository: `TRIIIS-LABS/firmware-taby`, branch `main`.
+- Personal fork: `gopichandbusam/firmware-taby`. The personal fork is local
+  remote `origin`; the original TRIIIS-LABS repository is remote `upstream`.
+- Custom work branch: `feature/waveshare-amoled-1.64-v2`. Keep personal `main`
+  aligned with `upstream/main`; do not develop directly on `main`.
+- Connected hardware was detected by macOS as an ESP32-S3 native USB
+  Serial/JTAG device. The exact `/dev/cu.usbmodem...` name is machine-specific
+  and may change after reset or when moving to another computer.
+- The board is new or running the Waveshare vendor demo. The read-only
+  `tools/device.py identify` command returned `No Taby response`, which is
+  expected before the first Taby installation.
+- Python communication tools are installed in the repository-local `.venv`:
+  esptool 4.11.0 and pyserial 3.5.
+- Official firmware release v1.2.0 for `amoled-1.64` was downloaded to the
+  ignored `work/` directory. Its SHA-256 and bundle inspection passed. That V1
+  build was useful for diagnosis but does not drive the newer panel correctly.
+- The installed macOS desktop app is Taby 1.0.13 (`com.heytaby.desktop`). It was
+  closed during USB preparation so it did not claim the serial port.
+- The PCB marking could not be located. On 2026-10-19, the owner explicitly
+  authorized a provisional V1 firmware test despite the unresolved revision.
+  Display validation is therefore required after flashing; do not treat USB
+  metadata or protocol verification as proof of hardware compatibility.
+- The complete official V1 bundle was flashed successfully, but its screen
+  stayed blank. Serial diagnostics showed successful rendering, which isolated
+  the failure to the physical panel control path.
+- Serial diagnostics show the firmware loading the asset pack and reporting a
+  successful render of `idle_01_loop`; USB/device logic is running while the
+  physical panel produces no visible output.
+- The Taby desktop app reports `Physical Taby Connected`, and the device now
+  reports USB onboarding complete. The app connection does not validate the
+  display wiring.
+- The evidence matches the newer Waveshare V1.1 PCB: released V1 firmware drives
+  LCD chip select on GPIO9, while V1.1 uses GPIO46. The repository and upstream
+  pull request #9 call this newer revision `amoled-1.64-v2`.
+- A separate `amoled-1.64-v2` development target is now implemented locally. It
+  preserves the original V1 GPIO9 target, reuses the existing asset pack, and
+  selects GPIO46 only for V1.1/V2.
+- ESP-IDF 5.4.2 is installed under ignored `work/esp-idf-v5.4.2`; the required
+  host tools CMake and Ninja were installed with Homebrew.
+- The V2 target passed `tools/check.py`, all 56 runnable unit tests, an ESP-IDF
+  production build, release packaging, and bundle inspection. Clean production
+  builds also passed for the unchanged `amoled-1.64` and `round-1.32` targets.
+- The custom bundle was flashed successfully. Every image hash verified, and
+  post-flash USB verification reports firmware `1.2.0`, assets `0.3.3`, target
+  `amoled-1.64-v2`, rectangle `280 x 456`, and `usb_bridge_ready: true`.
+- The device accepted `idle_01_loop`, and Taby 1.0.13 reports `Physical Taby
+  Connected`. Physical screen visibility still requires the owner's direct
+  confirmation; a successful USB response is not proof of visible pixels.
+
+## Hardware revision notes
+
+The official firmware v1.2.0 release supports only the Waveshare 1.64-inch
+**V1** PCB. Waveshare calls the newer board **V1.1**; this local development
+target follows the existing repository/upstream name **V2**.
+
+- Supported V1: revision silkscreen is at the top of the PCB and LCD chip
+  select is GPIO9.
+- V1.1 / local V2 target: revision silkscreen is on the right side near the pin
+  headers and LCD chip select is GPIO46.
+
+Do not infer PCB revision from the USB ID, ESP32 chip ID, screen size, or flash
+size. Select the target from the physical PCB marking or known purchase revision.
+
+## Next steps
+
+1. Get the owner's visual confirmation that `idle_01_loop` is now visible.
+2. If visible, test touch, tilt, and a second animation on the physical board.
+3. Finish the desktop app's separate Brain download only when the owner wants
+   the local AI features; it is not required for firmware or USB detection.
+4. Before merging or opening an upstream PR, obtain senior/upstream review
+   because adding `amoled-1.64-v2` expands the externally reported
+   `hardware_target` contract.
+5. On the other work computer, clone this branch, run `python3 tools/bootstrap.py`,
+   connect the board, and use `tools/device.py ports` and `info`; reflashing is
+   unnecessary unless the firmware changes.
+
+## Keeping the personal fork updated
+
+After cloning the personal fork on another computer, add the original project
+once:
+
+```sh
+git remote add upstream https://github.com/TRIIIS-LABS/firmware-taby.git
+```
+
+Bring new upstream commits into the personal fork and then into this feature
+branch without rewriting published history:
+
+```sh
+git fetch upstream
+git switch main
+git merge --ff-only upstream/main
+git push origin main
+git switch feature/waveshare-amoled-1.64-v2
+git merge main
+git push origin feature/waveshare-amoled-1.64-v2
+```
+
+If either merge reports a conflict, stop and review the conflicting firmware
+changes before pushing. Never force-push merely to bypass an upstream conflict.
+
+## Safety and repository hygiene
+
+- Use only official release assets and their matching checksum from the same
+  release.
+- Do not erase the whole flash or alter eFuses/security settings as a routine
+  workaround.
+- Do not commit `.venv`, downloaded firmware bundles, credentials, tokens,
+  factory identity data, or private device logs.
+- `work/` is intentionally ignored; it contains reproducible downloads rather
+  than source.

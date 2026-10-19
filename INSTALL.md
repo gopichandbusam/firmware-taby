@@ -22,12 +22,16 @@ and can install the complete release directly on a supported new board.
 | Board argument | Exact hardware | Flash |
 | --- | --- | --- |
 | `amoled-1.64` | Waveshare ESP32-S3-Touch-AMOLED-1.64 **V1** | 16 MB |
+| `amoled-1.64-v2` | Waveshare ESP32-S3-Touch-AMOLED-1.64 **V1.1 / V2 development target** | 16 MB |
 | `round-1.32` | Waveshare ESP32-S3-Touch-AMOLED-1.32 | 8 MB |
 
 **An ESP32-S3 chip ID or USB VID/PID cannot identify the display or PCB revision.**
-The 1.64 V2 is unsupported. Do not use a 1.64 image on the round board or patch
-pins during an ordinary installation. See the discovery rules below when a
-device cannot report a supported target.
+The two 1.64 revisions need different bundles: the newer PCB moved display
+chip-select from GPIO9 to GPIO46, so the other revision's image leaves the
+screen black. Waveshare's current documentation calls the newer PCB V1.1 while
+this repository's target name follows the existing upstream V2 support branch.
+Do not use a 1.64 image on the round board. See the discovery rules below when
+a device cannot report a supported target.
 
 Connect a known **data-capable** USB cable directly to the computer. Close Taby,
 serial monitors, and other applications using the port for the installation.
@@ -93,7 +97,10 @@ problem using the USB section below.
 - **`firmware_target`:** use the returned `board` and `revision` for an update
   when the existing display works correctly. Do not ask the user to read a PCB
   marking again if this working target is already established. `amoled-1.64`
-  currently maps to V1; `round-1.32` maps to the original round board.
+  maps to V1; `amoled-1.64-v2` maps to the newer V1.1/V2 development target;
+  `round-1.32` maps to the original round board. A newer 1.64 PCB running an
+  `amoled-1.64` bundle reports the old target and can pass protocol verification
+  while its screen remains black, so confirm visible output before reusing it.
 - **`unknown` or no Taby reply:** older firmware (including the tested 1.0.6
   build), blank boards, and vendor demos may not report a target. Ask for the
   board marking, order details that specify the revision, or a clear PCB photo.
@@ -150,6 +157,9 @@ Use a published release from
 [TRIIIS-LABS/firmware-taby](https://github.com/TRIIIS-LABS/firmware-taby/releases).
 Download `taby-amoled-1.64.zip` or `taby-round-1.32.zip` and its `.sha256` file
 from the **same release**. Follow any release-specific compatibility notes.
+The `amoled-1.64-v2` target is currently a development target, not part of the
+published v1.2.0 release: build it from source to produce
+`taby-amoled-1.64-v2.zip`. Do not use `taby-amoled-1.64.zip` on a V1.1/V2 PCB.
 Verify the ZIP's SHA-256 against that file, then extract it to a local directory.
 Checksums detect corruption; obtain both files from the official release, not an
 untrusted mirror. Do not execute scripts from inside a downloaded firmware ZIP.
@@ -210,10 +220,12 @@ PYTHON tools/device.py animation --port PORT --id confirmation
 Ask the user whether the animation looks correct. Protocol acceptance is not
 proof that the screen, touch, and artwork are visually correct. Report any
 unverified step clearly; do not report success from esptool's exit alone.
-For additional animation tests, choose IDs actually listed in
-`assets/BOARD/manifest.json` and repeat the `animation` command. This tests the
-documented USB control path. It is not an MCP test: report MCP success only after
-calling a tool on the Taby app's maintained MCP interface and checking its result.
+For additional animation tests, choose IDs actually listed in the target's asset
+manifest and repeat the `animation` command. Most targets use
+`assets/BOARD/manifest.json`; `amoled-1.64-v2` intentionally reuses
+`assets/amoled-1.64/manifest.json`. This tests the documented USB control path.
+It is not an MCP test: report MCP success only after calling a tool on the Taby
+app's maintained MCP interface and checking its result.
 
 ### If esptool cannot connect or the device stays in download mode
 
@@ -222,6 +234,9 @@ calling a tool on the Taby app's maintained MCP interface and checking its resul
   reset without writing flash. Wait a few seconds, list ports, and run `verify`.
   If software reset fails, use the board's buttons below.
 - **1.64 V1:** hold BOOT, press/release RESET, then release BOOT.
+- **1.64 V1.1 / V2:** hold BOOT, press and release RESET, keep holding BOOT for
+  about two more seconds, then release BOOT. Holding BOOT while plugging in USB
+  also works. After flashing, press RESET alone to start Taby.
 - **Round 1.32:** hold BOOT while powering the board on again, then release BOOT.
   Follow [Waveshare's board guide](https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-1.32).
 - List ports again; bootloader and running firmware can enumerate differently.

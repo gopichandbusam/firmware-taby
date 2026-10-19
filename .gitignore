@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 dist/
+/work/
 firmware/build*/
 firmware/sdkconfig
 firmware/sdkconfig.*
