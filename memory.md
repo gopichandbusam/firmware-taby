@@ -130,9 +130,11 @@ size. Select the target from the physical PCB marking or known purchase revision
 
 1. Review the draft pull request from `feature/bluetooth-first` into the
    personal fork's `main`; do not merge it merely because host/build checks pass.
-2. On the office device, build/package or use the inspected corrected V2 bundle
-   from commit `1803bef` or later, flash it, and verify the exact compiled
-   identity UUID before running BLE acceptance.
+2. The personal test board now runs the inspected V2 bundle from commit
+   `7590388`: firmware `1.2.0`, assets `0.3.3`, target `amoled-1.64-v2`.
+   Flash hashes, direct USB `INFO`, a `confirmation` animation command, visible
+   animation output, and Taby.app USB detection all passed. Use this exact
+   source commit when comparing office-device results.
 3. Run the installed-app/helper BLE tests after confirming macOS Bluetooth
    access for Taby; record only a redacted device-ID suffix.
 4. Physically validate the full manifest-driven animation sweep and lifecycle
@@ -144,8 +146,9 @@ size. Select the target from the physical PCB marking or known purchase revision
    review because Taby 1.0.13 expects unbonded BLE protocol 2.
 8. On the other work computer, check out the pull-request branch, run
    `python3 tools/bootstrap.py`, connect the board, and use
-   `tools/device.py ports` and `info`. The office board must be flashed because
-   the corrected UUID build has not yet been installed on hardware.
+   `tools/device.py ports` and `info`. The board should report target
+   `amoled-1.64-v2`, firmware `1.2.0`, assets `0.3.3`, and Bluetooth as its
+   preferred transport before BLE acceptance begins.
 
 ## Keeping the personal fork updated
 

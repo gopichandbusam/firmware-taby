@@ -339,3 +339,25 @@ alone does not prove that the display or artwork is correct.
   consistent target guides. The Bluetooth candidate still reports `1.2.0`, so
   office testing must match `source_commit`; publication waits for a distinct
   release version and hardware acceptance.
+
+### 2026-10-20 corrected V2 hardware recovery
+
+- Put the connected Waveshare 1.64-inch V1.1/V2 board into ROM download mode
+  with the documented BOOT/RESET sequence and flashed the inspected
+  `amoled-1.64-v2` bundle from source commit `7590388`. All five images wrote
+  and hash-verified; NVS and factory identity partitions were not written.
+- The board remained in download mode after flashing. Releasing BOOT and
+  pressing RESET alone started the application, matching the recovery note in
+  `INSTALL.md`; no second flash or full-chip erase was needed.
+- Fresh direct USB verification passed: the board reported firmware `1.2.0`,
+  assets `0.3.3`, target `amoled-1.64-v2`, 280x456 rectangular display,
+  Bluetooth preferred and onboarding complete, USB bridge ready, and normal
+  eye motion. The full device identity was not recorded.
+- A direct `confirmation` animation request was accepted and the owner
+  confirmed visible animation output. After reopening Taby.app, its Physical
+  Taby screen reported `Taby is connected over USB` and `Animation sent to
+  your Taby`.
+- This verifies corrected firmware boot, display/assets, direct USB protocol,
+  and desktop-app USB discovery on the personal Mac. Bluetooth discovery,
+  remembered reconnect, power-loss recovery, the complete animation sweep,
+  and work-Mac handoff remain separate acceptance gates.
