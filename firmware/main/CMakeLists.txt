@@ -4,6 +4,7 @@ idf_component_register(
         "board_amoled_1_64.c"
         "dns_server.c"
         "taby_ble_transport.c"
+        "taby_ble_protocol_v2.c"
         "taby_asset_store.c"
         "taby_animation_assets.c"
         "taby_build_info.c"
@@ -25,6 +26,7 @@ idf_component_register(
         "taby_transport_prefs.c"
         "taby_transport_protocol.c"
         "taby_usb_serial.c"
+        "taby_usb_ble_v2_capability.c"
         "taby_wifi.c"
     INCLUDE_DIRS "."
     REQUIRES bt driver esp_adc esp_event esp_http_server esp_lcd esp_netif esp_timer esp_wifi json lvgl mdns mqtt nvs_flash esp_lcd_sh8601 spiffs

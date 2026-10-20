@@ -164,6 +164,20 @@ Verify the ZIP's SHA-256 against that file, then extract it to a local directory
 Checksums detect corruption; obtain both files from the official release, not an
 untrusted mirror. Do not execute scripts from inside a downloaded firmware ZIP.
 
+Published historical firmware remains available for rollback and comparison:
+
+| Official release | Downloadable targets | Newer 1.64 V1.1/V2 |
+| --- | --- | --- |
+| [v1.0.8](https://github.com/TRIIIS-LABS/firmware-taby/releases/tag/v1.0.8) | Original `amoled-1.64` V1 and `round-1.32`, with checksums | Not included |
+| [v1.1.0](https://github.com/TRIIIS-LABS/firmware-taby/releases/tag/v1.1.0) | Original `amoled-1.64` V1 and `round-1.32`, with checksums | Not included |
+| [v1.2.0](https://github.com/TRIIIS-LABS/firmware-taby/releases/tag/v1.2.0) | Original `amoled-1.64` V1 and `round-1.32`, with checksums | Not included |
+| Draft PR #2 candidate | Source builds for all three targets | Included as `amoled-1.64-v2`; hardware acceptance pending |
+
+The candidate currently reports version `1.2.0`, matching the official stable
+release. For office testing, identify it by the clean manifest's exact
+`source_commit`, not by the version string alone. Do not publish candidate
+binaries until a distinct release version is chosen.
+
 For an unpublished repository with no release, explain that prebuilt installation
 is not available yet. Build the selected board using
 [the source instructions](firmware/README.md#build-from-source) if the user wants
@@ -172,6 +186,30 @@ to proceed. Do not invent download URLs, versions, offsets, or successful instal
 The extracted bundle contains `manifest.json`, firmware, bootloader, partition
 table, OTA-selection data, and the animation filesystem image. There is no
 factory identity or Wi-Fi configuration in a public bundle.
+
+### Source candidate: build all original and newer targets
+
+For this Bluetooth pull request, use the source instructions rather than
+substituting an official older-board ZIP for the newer board. In an ESP-IDF
+v5.4.2 terminal, build and package all included targets to prove that shared
+changes preserve the original firmware as well as the new V2 target:
+
+```sh
+python tools/check.py
+python -m unittest discover -s tests -v
+python tools/build.py amoled-1.64
+python tools/build.py amoled-1.64-v2
+python tools/build.py round-1.32
+python tools/package_release.py amoled-1.64 --output dist
+python tools/package_release.py amoled-1.64-v2 --output dist
+python tools/package_release.py round-1.32 --output dist
+```
+
+This produces one ZIP, checksum, and extracted bundle per target. Keep them
+separate. Confirm each manifest names the current tested commit and has
+`source_dirty: false`; then inspect only the bundle matching the physical board
+with the command in step 4. Generated bundles are release/test artifacts, not
+files to commit to the source pull request.
 
 ## 4. Inspect, install, and verify
 
@@ -269,6 +307,15 @@ Close the installation tools, reopen the Taby app, and enable physical output
 in its companion settings. The app owns the USB connection while it is running.
 Exact settings labels depend on the app version. This repository installs device
 firmware, not the desktop application, and does not create an account or claim a device.
+
+The unreleased `feature/bluetooth-first` candidate for Taby 1.0.13 can use that
+first USB connection to select Bluetooth as its persistent default. USB remains
+the installation, update, diagnostic, and recovery route. On each Mac, grant
+Bluetooth access to the signed Taby app when macOS asks; the app remembers a
+CoreBluetooth peripheral plus the stable Taby device ID, not an OS-level bonded
+or passkey-paired device. Use one controlling Mac at a time. This unbonded
+candidate still requires office-device BLE, display, reconnect, and power-cycle
+acceptance before merge; see [the hardware-test guide](tests/hardware/README.md).
 
 For a custom project, use the [documented device commands](firmware/README.md#talk-to-taby).
 An MCP server is not needed to install firmware. We maintain the app integration;

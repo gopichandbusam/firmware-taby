@@ -20,7 +20,14 @@ GPIO45; those optional signals are not used here. The target reuses V1's
 ```sh
 python tools/build.py amoled-1.64-v2
 python tools/package_release.py amoled-1.64-v2
+.venv/bin/python tools/install.py inspect \
+  --board amoled-1.64-v2 \
+  --bundle dist/taby-amoled-1.64-v2
 ```
+
+Continue with the shared [flash and verification guide](../../../INSTALL.md#4-inspect-install-and-verify).
+For the complete original/new target matrix and all-target commands, see
+[the target guide](../README.md) and [firmware guide](../../README.md).
 
 A V1 image on this PCB, or this image on V1, leaves the screen black. For
 manual download mode, hold BOOT, press and release RESET, keep holding BOOT for

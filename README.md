@@ -79,7 +79,7 @@ that can run commands on that computer, then copy and send this prompt:
 ```text
 Help me install Physical Taby on my connected device.
 Read and follow this guide:
-https://github.com/TRIIIS-LABS/firmware-taby/blob/main/INSTALL.md
+https://github.com/gopichandbusam/firmware-taby/blob/feature/bluetooth-first/INSTALL.md
 
 Install any missing USB/ESP32 tools and list the connected ports. If Taby is
 already running, read its board metadata. For a blank board or vendor demo,
@@ -92,7 +92,33 @@ Then help me connect it to the Taby desktop app.
 
 Prefer doing it yourself? **[Follow the installation guide →](INSTALL.md)**
 
-Current firmware: **[1.2.0](https://github.com/TRIIIS-LABS/firmware-taby/releases/tag/v1.2.0)**.
+Official stable firmware for original boards:
+**[1.2.0](https://github.com/TRIIIS-LABS/firmware-taby/releases/tag/v1.2.0)**.
+
+### Firmware included in this repository
+
+| Build target | Hardware | Status and assets |
+| --- | --- | --- |
+| `amoled-1.64` | Original Waveshare 1.64-inch **V1**, 280 × 456 | Maintained original target; GPIO9 LCD chip select; 84-animation rectangular pack |
+| `amoled-1.64-v2` | Newer Waveshare 1.64-inch **V1.1 / V2**, 280 × 456 | Development target for this board; GPIO46 LCD chip select; reuses the same 84-animation pack |
+| `round-1.32` | Original Waveshare round 1.32-inch, 466 × 466 | Maintained original round target; 27-animation round pack |
+
+The linked official v1.2.0 release contains the published original-board
+firmware. This PR's source builds all three targets, including the newer V2
+board and the Bluetooth protocol changes, but it is not a replacement official
+release until the remaining hardware checks pass. Never interchange the V1 and
+V1.1/V2 1.64-inch bundles: the wrong image can run while leaving the display
+black.
+
+The Bluetooth candidate still reports firmware `1.2.0`; distinguish it from the
+official non-Bluetooth 1.2.0 by its manifest `source_commit`. Do not publish the
+candidate ZIPs as a release until a distinct release version is chosen and the
+hardware acceptance gates pass.
+
+To build and package every included target from this branch, follow the
+[all-target source instructions](firmware/README.md#build-and-package-every-included-target).
+To select, inspect, flash, verify, connect, or recover a board, follow the
+[complete installation guide](INSTALL.md).
 
 ---
 
@@ -158,6 +184,16 @@ New animations, cases, supported boards, and thoughtful fixes are welcome.
 Humans and AI agents contribute through the same pull-request workflow.
 
 [Work on firmware](firmware/README.md) · [Contribute a print](hardware/README.md#for-agents-and-contributors) · [Add a board](firmware/README.md#add-a-board)
+
+The `feature/bluetooth-first` development branch adds the BLE protocol used by
+Taby for macOS 1.0.13, including remembered device identity, display commands,
+choices, and reconnect handling. It is a personal compatibility build under
+review, not a released hardware-validated build: the corrected image still
+needs flashing and physical animation/lifecycle acceptance on the Waveshare
+1.64-inch V1.1/V2 board. See the
+[firmware guide](firmware/README.md#bluetooth-and-local-wi-fi) and
+[office hardware-test instructions](tests/hardware/README.md) for setup and
+limitations.
 
 <details>
 <summary><strong>Contributor notes & repository map</strong></summary>

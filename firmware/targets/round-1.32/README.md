@@ -10,16 +10,17 @@ It uses:
 - 8MB flash and 8MB octal PSRAM
 - the isolated `assets/round-1.32` pack at the repository root
 
-Build from `firmware/` with a dedicated build directory and sdkconfig:
+From the repository root, use the checked wrapper so the repository checks,
+isolated build directory, target metadata, and build fingerprint are applied:
 
-```bash
-idf.py -B build-round-1.32 \
-  -D SDKCONFIG=sdkconfig.round-1.32 \
-  -D SDKCONFIG_DEFAULTS=targets/round-1.32/sdkconfig.defaults \
-  -D TABY_HARDWARE_TARGET=round-1.32 \
-  build
+```sh
+python tools/build.py round-1.32
+python tools/package_release.py round-1.32
+.venv/bin/python tools/install.py inspect \
+  --board round-1.32 \
+  --bundle dist/taby-round-1.32
 ```
 
-For the recommended isolated build commands for both targets, see
-[the firmware guide](../../README.md). The public wrapper uses a separate
-build directory and sdkconfig for each board.
+Continue with the shared [flash and verification guide](../../../INSTALL.md#4-inspect-install-and-verify).
+For the complete original/new target matrix and all-target commands, see
+[the target guide](../README.md) and [firmware guide](../../README.md).

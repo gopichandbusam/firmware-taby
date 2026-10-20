@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -13,6 +14,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "host/ble_gap.h"
 #include "host/ble_gatt.h"
@@ -20,11 +22,12 @@
 #include "host/ble_hs_adv.h"
 #include "host/ble_hs_mbuf.h"
 #include "nimble/nimble_port.h"
-#include "nimble/nimble_port_freertos.h"
+#include "nimble/nimble_npl.h"
 #include "os/os_mbuf.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "taby_mqtt.h"
+#include "taby_ble_protocol_v2.h"
 #include "taby_power.h"
 #include "taby_build_info.h"
 #include "taby_display.h"
@@ -37,6 +40,8 @@ static const char *TAG = "taby_ble_transport";
 
 #define TABY_BLE_DEVICE_NAME_SIZE 32
 #define TABY_BLE_EVENT_PAYLOAD_SIZE 128
+#define TABY_BLE_IDENTITY_PAYLOAD_SIZE 704
+#define TABY_BLE_CHOICE_PAYLOAD_SIZE 64
 #define TABY_BLE_COMMAND_BUFFER_SIZE 256
 #define TABY_BLE_COMMAND_QUEUE_LENGTH 4
 #define TABY_BLE_COMMAND_TASK_STACK_SIZE 4096
@@ -44,6 +49,8 @@ static const char *TAG = "taby_ble_transport";
 #define TABY_BLE_FAST_CONN_ITVL_MAX 24
 #define TABY_BLE_FAST_CONN_LATENCY 0
 #define TABY_BLE_FAST_CONN_SUPERVISION_TIMEOUT 400
+#define TABY_BLE_ADV_RETRY_LIMIT 5
+#define TABY_BLE_ADV_RETRY_INITIAL_MS 100
 
 static const ble_uuid128_t k_taby_service_uuid =
     BLE_UUID128_INIT(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0,
@@ -60,21 +67,38 @@ static const ble_uuid128_t k_taby_state_characteristic_uuid =
 static const ble_uuid128_t k_taby_power_characteristic_uuid =
     BLE_UUID128_INIT(0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0,
                      0x00, 0x40, 0x00, 0x00, 0x59, 0x42, 0x41, 0x54);
+static const ble_uuid128_t k_taby_choice_characteristic_uuid =
+    BLE_UUID128_INIT(0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0,
+                     0x00, 0x40, 0x00, 0x00, 0x59, 0x42, 0x41, 0x54);
+static const ble_uuid128_t k_taby_identity_characteristic_uuid =
+    BLE_UUID128_INIT(0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0,
+                     0x00, 0x40, 0x00, 0x00, 0x59, 0x42, 0x41, 0x54);
 
 static char s_device_name[TABY_BLE_DEVICE_NAME_SIZE] = "Taby";
 static char s_last_event_payload[TABY_BLE_EVENT_PAYLOAD_SIZE] = "READY";
 static char s_last_error[96] = "";
 static uint8_t s_own_addr_type = BLE_OWN_ADDR_PUBLIC;
-static uint16_t s_connection_handle = BLE_HS_CONN_HANDLE_NONE;
+static atomic_uint_least16_t s_connection_handle = BLE_HS_CONN_HANDLE_NONE;
 static uint16_t s_command_value_handle = 0;
 static uint16_t s_event_value_handle = 0;
 static uint16_t s_state_value_handle = 0;
 static uint16_t s_power_value_handle = 0;
+static uint16_t s_choice_value_handle = 0;
+static uint16_t s_identity_value_handle = 0;
+static char s_identity_payload[TABY_BLE_IDENTITY_PAYLOAD_SIZE] = "";
 static bool s_notify_enabled = false;
-static bool s_started = false;
-static bool s_advertising = false;
+static atomic_bool s_started = false;
+static atomic_bool s_advertising = false;
 static bool s_synced = false;
 static bool s_nimble_initialized = false;
+/* Advertising/GAP/retry mutations share this mutex. It outlives NimBLE so a
+ * stale callback can safely acquire it and observe desired-active=false. */
+static SemaphoreHandle_t s_advertising_mutex = NULL;
+/* Clear under the same mutex used across the complete advertising attempt. */
+static atomic_bool s_desired_active = false;
+static struct ble_npl_callout s_advertising_retry;
+static bool s_advertising_retry_initialized = false;
+static unsigned int s_advertising_retry_count = 0;
 static QueueHandle_t s_command_queue = NULL;
 static TaskHandle_t s_command_task_handle = NULL;
 
@@ -110,6 +134,7 @@ static int bt_controller_status_for_log(void) {
 static void ble_host_task(void *param);
 static void ble_command_task(void *param);
 static void start_advertising(void);
+static void start_advertising_locked(void);
 static void request_fast_connection_params(uint16_t conn_handle);
 
 static const char *reusable_ui_command_from_command(const char *text) {
@@ -260,6 +285,7 @@ static void publish_event_payload(const char *payload, bool notify) {
 }
 
 static void reset_transport_runtime_state(void) {
+    s_desired_active = false;
     s_started = false;
     s_advertising = false;
     s_synced = false;
@@ -269,6 +295,9 @@ static void reset_transport_runtime_state(void) {
     s_event_value_handle = 0;
     s_state_value_handle = 0;
     s_power_value_handle = 0;
+    s_choice_value_handle = 0;
+    s_identity_value_handle = 0;
+    s_identity_payload[0] = '\0';
     publish_event_payload("READY", false);
 }
 
@@ -521,6 +550,50 @@ static int power_characteristic_access(
     return 0;
 }
 
+static int choice_characteristic_access(
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    struct ble_gatt_access_ctxt *ctxt,
+    void *arg) {
+    (void)conn_handle;
+    (void)attr_handle;
+    (void)arg;
+
+    if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+
+    taby_reusable_choice_signal_t choice = {0};
+    taby_reusable_ui_read_choice_signal(&choice);
+    char payload[TABY_BLE_CHOICE_PAYLOAD_SIZE];
+    if (!taby_ble_v2_format_choice_json(choice.signal, choice.selection,
+                                         payload, sizeof(payload))) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    if (os_mbuf_append(ctxt->om, payload, strlen(payload)) != 0) {
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return 0;
+}
+
+static int identity_characteristic_access(
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    struct ble_gatt_access_ctxt *ctxt,
+    void *arg) {
+    (void)conn_handle;
+    (void)attr_handle;
+    (void)arg;
+
+    if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR || s_identity_payload[0] == '\0') {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    if (os_mbuf_append(ctxt->om, s_identity_payload, strlen(s_identity_payload)) != 0) {
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return 0;
+}
+
 static const struct ble_gatt_svc_def k_gatt_services[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -549,6 +622,18 @@ static const struct ble_gatt_svc_def k_gatt_services[] = {
                 .access_cb = power_characteristic_access,
                 .flags = BLE_GATT_CHR_F_READ,
                 .val_handle = &s_power_value_handle,
+            },
+            {
+                .uuid = &k_taby_choice_characteristic_uuid.u,
+                .access_cb = choice_characteristic_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .val_handle = &s_choice_value_handle,
+            },
+            {
+                .uuid = &k_taby_identity_characteristic_uuid.u,
+                .access_cb = identity_characteristic_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .val_handle = &s_identity_value_handle,
             },
             {0},
         },
@@ -581,7 +666,43 @@ static void request_fast_connection_params(uint16_t conn_handle) {
     }
 }
 
-static int gap_event_handler(struct ble_gap_event *event, void *arg) {
+static bool advertising_state_lock(bool wait) {
+    return s_advertising_mutex &&
+        xSemaphoreTake(s_advertising_mutex, wait ? portMAX_DELAY : 0) == pdTRUE;
+}
+
+static void advertising_state_unlock(void) {
+    xSemaphoreGive(s_advertising_mutex);
+}
+
+/* All retry state/resource operations run with the advertising mutex held,
+ * except initialization before host launch (when no callbacks can run). */
+static void advertising_retry_cancel(void) {
+    if (s_advertising_retry_initialized) {
+        ble_npl_callout_stop(&s_advertising_retry);
+    }
+}
+
+static void advertising_retry_fire(struct ble_npl_event *event) {
+    (void)event;
+    /* Runs on the host event queue; start_advertising checks shutdown/sync. */
+    start_advertising();
+}
+
+static void advertising_retry_schedule(void) {
+    if (!s_desired_active || !s_synced || !s_advertising_retry_initialized ||
+        s_advertising_retry_count >= TABY_BLE_ADV_RETRY_LIMIT) {
+        return;
+    }
+    uint32_t delay_ms = TABY_BLE_ADV_RETRY_INITIAL_MS << s_advertising_retry_count++;
+    int rc = ble_npl_callout_reset(
+        &s_advertising_retry, ble_npl_time_ms_to_ticks32(delay_ms));
+    if (rc != 0) {
+        ESP_LOGE(TAG, "advertising retry schedule failed rc=%d", rc);
+    }
+}
+
+static int gap_event_handler_locked(struct ble_gap_event *event, void *arg) {
     (void)arg;
 
     switch (event->type) {
@@ -590,6 +711,8 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                 s_connection_handle = event->connect.conn_handle;
                 s_notify_enabled = false;
                 s_advertising = false;
+                advertising_retry_cancel();
+                s_advertising_retry_count = 0;
                 publish_event_payload("READY", false);
                 clear_last_error();
                 ESP_LOGI(TAG, "client connected handle=%u", event->connect.conn_handle);
@@ -599,7 +722,8 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                 snprintf(error, sizeof(error), "connect_status_%d", event->connect.status);
                 set_last_error(error);
                 ESP_LOGW(TAG, "connect failed status=%d", event->connect.status);
-                start_advertising();
+                s_advertising = false;
+                start_advertising_locked();
             }
             return 0;
         case BLE_GAP_EVENT_DISCONNECT:
@@ -611,15 +735,12 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
             s_connection_handle = BLE_HS_CONN_HANDLE_NONE;
             s_notify_enabled = false;
             s_advertising = false;
-            start_advertising();
+            start_advertising_locked();
             return 0;
         case BLE_GAP_EVENT_SUBSCRIBE:
             if (event->subscribe.attr_handle == s_event_value_handle) {
                 s_notify_enabled = event->subscribe.cur_notify != 0;
                 ESP_LOGI(TAG, "notify subscription=%d", s_notify_enabled ? 1 : 0);
-                if (s_notify_enabled) {
-                    notify_last_event_payload();
-                }
             }
             return 0;
         case BLE_GAP_EVENT_CONN_UPDATE:
@@ -632,7 +753,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         case BLE_GAP_EVENT_ADV_COMPLETE:
             ESP_LOGI(TAG, "advertising complete reason=%d", event->adv_complete.reason);
             s_advertising = false;
-            start_advertising();
+            start_advertising_locked();
             return 0;
         case BLE_GAP_EVENT_MTU:
             ESP_LOGI(TAG, "mtu updated value=%u", event->mtu.value);
@@ -642,7 +763,34 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     }
 }
 
+static int gap_event_handler(struct ble_gap_event *event, void *arg) {
+    if (!advertising_state_lock(true)) {
+        return 0;
+    }
+    int rc = gap_event_handler_locked(event, arg);
+    bool notify_subscription = event->type == BLE_GAP_EVENT_SUBSCRIBE &&
+        event->subscribe.attr_handle == s_event_value_handle && s_notify_enabled;
+    advertising_state_unlock();
+    /* NimBLE dispatches NOTIFY_TX synchronously from notify_custom. Release
+     * the lifecycle mutex before that API can re-enter this GAP handler. */
+    if (notify_subscription) {
+        notify_last_event_payload();
+    }
+    return rc;
+}
+
 static void start_advertising(void) {
+    if (advertising_state_lock(true)) {
+        start_advertising_locked();
+        advertising_state_unlock();
+    }
+}
+
+static void start_advertising_locked(void) {
+    if (!s_desired_active || !s_synced ||
+        s_connection_handle != BLE_HS_CONN_HANDLE_NONE || s_advertising) {
+        return;
+    }
     struct ble_hs_adv_fields fields;
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
@@ -657,6 +805,7 @@ static void start_advertising(void) {
         set_last_error(error);
         s_advertising = false;
         ESP_LOGE(TAG, "adv set fields failed rc=%d", rc);
+        advertising_retry_schedule();
         return;
     }
 
@@ -673,6 +822,7 @@ static void start_advertising(void) {
         set_last_error(error);
         s_advertising = false;
         ESP_LOGE(TAG, "adv rsp set fields failed rc=%d", rc);
+        advertising_retry_schedule();
         return;
     }
 
@@ -688,44 +838,62 @@ static void start_advertising(void) {
         &adv_params,
         gap_event_handler,
         NULL);
-    if (rc != 0) {
+    if (rc != 0 && rc != BLE_HS_EALREADY) {
         char error[64];
         snprintf(error, sizeof(error), "adv_start_rc_%d", rc);
         set_last_error(error);
         s_advertising = false;
         ESP_LOGE(TAG, "adv start failed rc=%d", rc);
+        advertising_retry_schedule();
         return;
     }
 
     clear_last_error();
     s_advertising = true;
+    advertising_retry_cancel();
+    s_advertising_retry_count = 0;
     ESP_LOGI(TAG, "advertising started name=%s", s_device_name);
 }
 
 static void on_sync(void) {
-    s_synced = true;
+    if (!advertising_state_lock(true)) {
+        return;
+    }
+    s_synced = false;
     int rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
     if (rc != 0) {
         char error[64];
         snprintf(error, sizeof(error), "infer_addr_rc_%d", rc);
         set_last_error(error);
         ESP_LOGE(TAG, "infer addr type failed rc=%d", rc);
+        advertising_state_unlock();
         return;
     }
 
     clear_last_error();
-    start_advertising();
+    s_synced = true;
+    s_advertising_retry_count = 0;
+    start_advertising_locked();
+    advertising_state_unlock();
 }
 
 static void on_reset(int reason) {
+    if (!advertising_state_lock(true)) {
+        return;
+    }
     s_synced = false;
+    s_advertising = false;
+    s_connection_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_notify_enabled = false;
+    advertising_retry_cancel();
     ESP_LOGW(TAG, "host reset reason=%d", reason);
+    advertising_state_unlock();
 }
 
 static void ble_host_task(void *param) {
     (void)param;
     nimble_port_run();
-    nimble_port_freertos_deinit();
+    vTaskDelete(NULL);
 }
 
 static const char *current_transport_state_name(void) {
@@ -833,13 +1001,29 @@ static void ble_command_task(void *param) {
 }
 
 esp_err_t taby_ble_transport_init(const taby_identity_t *identity) {
+    if (!s_advertising_mutex) {
+        s_advertising_mutex = xSemaphoreCreateMutex();
+        if (!s_advertising_mutex) {
+            set_last_error("advertising_mutex_create_failed");
+            return ESP_ERR_NO_MEM;
+        }
+    }
     if (s_started) {
-        return ESP_OK;
+        /* A failed shutdown must be completed before this host can be reused. */
+        return s_desired_active ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
 
-    build_device_name(identity);
     clear_last_error();
     reset_transport_runtime_state();
+    if (!identity ||
+        !memchr(identity->device_id, '\0', sizeof(identity->device_id)) ||
+        !taby_ble_v2_format_identity_json(
+            identity->device_id, taby_firmware_version(),
+            s_identity_payload, sizeof(s_identity_payload))) {
+        set_last_error("ble_v2_identity_unavailable");
+        return ESP_ERR_INVALID_ARG;
+    }
+    build_device_name(identity);
 
     ESP_LOGI(
         TAG,
@@ -947,14 +1131,50 @@ esp_err_t taby_ble_transport_init(const taby_identity_t *identity) {
         }
     }
 
-    nimble_port_freertos_init(ble_host_task);
+    rc = ble_npl_callout_init(
+        &s_advertising_retry, nimble_port_get_dflt_eventq(), advertising_retry_fire, NULL);
+    if (rc != 0) {
+        set_last_error("advertising_retry_init_failed");
+        nimble_port_deinit();
+        s_nimble_initialized = false;
+        reset_transport_runtime_state();
+        return ESP_ERR_NO_MEM;
+    }
+    s_advertising_retry_initialized = true;
+    s_advertising_retry_count = 0;
+    s_desired_active = true;
     s_started = true;
-    clear_last_error();
+    /* Publish readiness before host launch: sync can run immediately. Do not
+     * clear an advertising failure recorded by that asynchronous callback. */
+    /* IDF 5.4's wrapper discards xTaskCreatePinnedToCore's result. Own this
+     * launch so an allocation failure cannot masquerade as a ready host. */
+    if (xTaskCreatePinnedToCore(
+            ble_host_task, "nimble_host", NIMBLE_HS_STACK_SIZE, NULL,
+            configMAX_PRIORITIES - 4, NULL, NIMBLE_CORE) != pdPASS) {
+        set_last_error("host_task_create_failed");
+        s_desired_active = false;
+        ble_npl_callout_deinit(&s_advertising_retry);
+        s_advertising_retry_initialized = false;
+        nimble_port_deinit();
+        s_nimble_initialized = false;
+        reset_transport_runtime_state();
+        return ESP_ERR_NO_MEM;
+    }
     ESP_LOGI(TAG, "nimble transport ready name=%s", s_device_name);
     return ESP_OK;
 }
 
 esp_err_t taby_ble_transport_shutdown(void) {
+    if (!advertising_state_lock(true)) {
+        return ESP_OK;
+    }
+    /* Linearize shutdown after any in-flight attempt. Once this flag is
+     * cleared, no callback/ensure can pass the gate and then start GAP later. */
+    s_desired_active = false;
+    advertising_retry_cancel();
+    bool was_advertising = s_advertising;
+    uint16_t connection_handle = s_connection_handle;
+    advertising_state_unlock();
     if (!s_started && !s_nimble_initialized) {
         return ESP_OK;
     }
@@ -966,15 +1186,16 @@ esp_err_t taby_ble_transport_shutdown(void) {
         (uint32_t)esp_get_free_heap_size(),
         (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
 
-    if (s_advertising) {
+    /* Never hold the mutex across stop/terminate: GAP callbacks need it. */
+    if (was_advertising) {
         int adv_stop_rc = ble_gap_adv_stop();
         if (adv_stop_rc != 0 && adv_stop_rc != BLE_HS_EALREADY) {
             ESP_LOGW(TAG, "adv stop failed rc=%d", adv_stop_rc);
         }
     }
 
-    if (s_connection_handle != BLE_HS_CONN_HANDLE_NONE) {
-        int terminate_rc = ble_gap_terminate(s_connection_handle, BLE_ERR_REM_USER_CONN_TERM);
+    if (connection_handle != BLE_HS_CONN_HANDLE_NONE) {
+        int terminate_rc = ble_gap_terminate(connection_handle, BLE_ERR_REM_USER_CONN_TERM);
         if (terminate_rc != 0 && terminate_rc != BLE_HS_ENOTCONN) {
             ESP_LOGW(TAG, "connection terminate failed rc=%d", terminate_rc);
         }
@@ -983,11 +1204,21 @@ esp_err_t taby_ble_transport_shutdown(void) {
     if (s_started) {
         int stop_rc = nimble_port_stop();
         if (stop_rc != 0) {
+            char error[64];
+            snprintf(error, sizeof(error), "nimble_port_stop_rc_%d", stop_rc);
+            set_last_error(error);
             ESP_LOGE(TAG, "nimble_port_stop failed rc=%d", stop_rc);
             return ESP_FAIL;
         }
     }
 
+    /* The host is stopped, so no queued retry can outlive its NPL resources. */
+    advertising_state_lock(true);
+    if (s_advertising_retry_initialized) {
+        ble_npl_callout_deinit(&s_advertising_retry);
+        s_advertising_retry_initialized = false;
+    }
+    advertising_state_unlock();
     if (s_nimble_initialized) {
         nimble_port_deinit();
         s_nimble_initialized = false;
@@ -1006,19 +1237,16 @@ esp_err_t taby_ble_transport_shutdown(void) {
 }
 
 void taby_ble_transport_ensure_advertising(void) {
-    if (!s_started || !s_synced) {
-        return;
+    /* USB never waits on a host callback or on an advertising backoff. The
+     * owner already in flight will either start advertising or arm its retry. */
+    if (advertising_state_lock(false)) {
+        start_advertising_locked();
+        advertising_state_unlock();
     }
-
-    if (s_connection_handle != BLE_HS_CONN_HANDLE_NONE || s_advertising) {
-        return;
-    }
-
-    start_advertising();
 }
 
 bool taby_ble_transport_is_ready(void) {
-    return s_started;
+    return s_desired_active && s_started;
 }
 
 bool taby_ble_transport_is_advertising(void) {

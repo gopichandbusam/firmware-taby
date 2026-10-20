@@ -5,6 +5,19 @@ development. Start at [INSTALL.md](../INSTALL.md) to install a prebuilt release.
 
 ## Build from source
 
+### Included firmware matrix
+
+| Target | Board revision | Flash | Display assets | Notes |
+| --- | --- | --- | --- | --- |
+| `amoled-1.64` | Waveshare 1.64 V1 | 16 MB | `assets/amoled-1.64` | Original target; LCD_CS GPIO9 |
+| `amoled-1.64-v2` | Waveshare 1.64 V1.1/V2 | 16 MB | aliases `assets/amoled-1.64` | New target; LCD_CS GPIO46 |
+| `round-1.32` | Waveshare 1.32 original | 8 MB | `assets/round-1.32` | Original round target |
+
+The Bluetooth-first shared firmware compiles for all three targets. Host and
+build validation does not substitute for physical testing on each board. The
+current office acceptance is specifically for `amoled-1.64-v2`; do not infer
+physical Bluetooth or display acceptance for the two original targets.
+
 Install **ESP-IDF v5.4.2** using
 [Espressif's setup guide](https://docs.espressif.com/projects/esp-idf/en/v5.4.2/esp32s3/get-started/index.html).
 Use the installer on Windows or Espressif's install/export scripts on macOS/Linux.
@@ -20,6 +33,47 @@ python tools/build.py amoled-1.64
 python tools/build.py amoled-1.64-v2
 python tools/build.py round-1.32
 ```
+
+### Build and package every included target
+
+Run the following in an ESP-IDF v5.4.2 terminal from a clean checkout of the
+exact commit you intend to test:
+
+```sh
+python tools/check.py
+python -m unittest discover -s tests -v
+python tools/build.py amoled-1.64
+python tools/build.py amoled-1.64-v2
+python tools/build.py round-1.32
+python tools/package_release.py amoled-1.64 --output dist
+python tools/package_release.py amoled-1.64-v2 --output dist
+python tools/package_release.py round-1.32 --output dist
+```
+
+Expected archives and checksums:
+
+```text
+dist/taby-amoled-1.64.zip
+dist/taby-amoled-1.64.zip.sha256
+dist/taby-amoled-1.64-v2.zip
+dist/taby-amoled-1.64-v2.zip.sha256
+dist/taby-round-1.32.zip
+dist/taby-round-1.32.zip.sha256
+```
+
+Inspect each extracted bundle before flashing:
+
+```sh
+.venv/bin/python tools/install.py inspect --board amoled-1.64 --bundle dist/taby-amoled-1.64
+.venv/bin/python tools/install.py inspect --board amoled-1.64-v2 --bundle dist/taby-amoled-1.64-v2
+.venv/bin/python tools/install.py inspect --board round-1.32 --bundle dist/taby-round-1.32
+```
+
+Each manifest must name the selected board and tested commit, report
+`source_dirty: false`, contain exactly the reviewed five flash images, and omit
+NVS/factory identity. Build directories, `dist/`, and `work/` are intentionally
+ignored; do not commit generated binaries to the pull request. Publish them as
+release assets only after the matching hardware acceptance is recorded.
 
 Each board gets its own `firmware/build-BOARD` and `firmware/sdkconfig.BOARD`.
 No Node, app repository, private service, factory registry, or editing software
@@ -121,16 +175,46 @@ INFO/DIAG output, Wi-Fi credentials, or personal device logs in issues.
 
 ### Bluetooth and local Wi-Fi
 
-Select Bluetooth on the device to use its BLE GATT service:
-`54414259-0000-4000-a000-000000000001`. Write a short UTF-8 animation or `UI/...`
-command as one characteristic value (without the USB newline) to the
-characteristic ending in `0002`; subscribe to events on `0003` before writing.
-`0004` is readable state, and `0005` is readable power information. The firmware
-supports one controller at a time and does not use BLE bonding. BLE event payloads
-use their own `READY`/`OK`/`ERR` messages rather than USB's `TABY:` prefix; an
-animation the board lacks is a successful write answered
-`OK <STATE> unsupported_animation <ID>`.
-For payload details and limits, see `main/taby_ble_transport.c`.
+Use USB once to install/update the firmware, discover the stable device identity,
+and select Bluetooth as both the active and default transport. A successful
+default selection is committed before it is acknowledged; subsequent resets and
+repower start the saved Bluetooth mode automatically. USB stays initialized for
+diagnosis, returning to USB mode, and reflashing.
+
+Taby for macOS 1.0.13 offers this handoff only when USB `INFO` advertises
+`bluetooth_v2`. The app remembers the CoreBluetooth peripheral identifier plus
+the stable Taby device ID. This is app-level remembered selection, not macOS
+bonding or passkey pairing. Give the signed Taby app Bluetooth privacy access on
+each Mac, and use only one controlling Mac at a time.
+
+`bluetooth_v2` is advertised only when the firmware can produce a valid stable
+identity. On boot, BLE starts only for a completed persisted Bluetooth default.
+An ordinary disconnect re-advertises; an intentional switch to USB stops BLE.
+
+The BLE GATT service is `54414259-0000-4000-a000-000000000001`:
+
+| Suffix | Access | Value |
+| --- | --- | --- |
+| `0002` | Write | One short UTF-8 animation, `UI/...`, timer, clear, brightness, orientation, or other shared display command; omit USB's trailing newline |
+| `0003` | Notify | `READY`/`OK`/`ERR` event payloads |
+| `0004` | Read | Current presentation state |
+| `0005` | Read | Power information |
+| `0006` | Read | Choice JSON with `signal` and `choice` |
+| `0007` | Read | Protocol-2 identity JSON with `protocol`, `deviceId`, and `firmwareVersion` |
+
+Subscribe to `0003` before writing `0002`. All display commands use the same
+parser/runtime as USB, so shipped animations and intro/loop pairs, cards, timers,
+clear/idle, choices, and supported orientation commands do not have a separate
+BLE allowlist. An unavailable animation is still a successful compatibility
+reply: `OK <STATE> unsupported_animation <ID>`. For payload limits and lifecycle
+details, see `main/taby_ble_transport.c`.
+
+This branch is an unbonded personal compatibility build. It supports one BLE
+controller, exposes no factory secret or Wi-Fi credential, and must not be
+treated as an authenticated public control channel. Public/upstream release
+requires security and API-contract review. The corrected protocol-2 image has
+passed host tests and all target builds, but physical BLE, animation, restart,
+power-loss, battery, cable-removal, and second-Mac acceptance remain pending.
 
 After explicitly setting up Wi-Fi on the device, local HTTP supports `GET /ping`,
 `GET /state`, `GET /touch`, `GET /v1/reusable/choice-signal`, and
@@ -138,7 +222,7 @@ After explicitly setting up Wi-Fi on the device, local HTTP supports `GET /ping`
 when using a `UI/...` command. These inherited local endpoints have no request
 authentication; use them only on a trusted local network, never by exposing the
 device to the Internet. See `main/taby_http_server.c` for the implementation.
-USB remains the firmware-install route for both boards.
+USB remains the firmware-install route for all three targets.
 
 Custom integrations, including MCP servers, are maintained by their authors.
 The supported first-party integration is in the Taby app.

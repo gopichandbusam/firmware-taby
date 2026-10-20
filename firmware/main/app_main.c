@@ -56,10 +56,8 @@ void app_main(void) {
     ESP_ERROR_CHECK(taby_power_init());
     ESP_ERROR_CHECK(taby_wifi_init(taby_identity_get()));
     taby_transport_pref_t preferred_transport = taby_transport_preferred_mode();
-    bool onboarding_complete = taby_transport_onboarding_complete();
     bool should_start_bluetooth =
-        preferred_transport == TABY_TRANSPORT_PREF_BLUETOOTH ||
-        (!onboarding_complete && preferred_transport == TABY_TRANSPORT_PREF_UNKNOWN);
+        preferred_transport == TABY_TRANSPORT_PREF_BLUETOOTH;
     if (should_start_bluetooth) {
         esp_err_t ble_err = taby_ble_transport_init(taby_identity_get());
         if (ble_err != ESP_OK) {

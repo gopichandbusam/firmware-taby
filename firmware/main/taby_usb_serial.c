@@ -14,6 +14,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "taby_ble_transport.h"
+#include "taby_usb_ble_v2_capability.h"
 #include "taby_build_info.h"
 #include "taby_display.h"
 #include "taby_eye_motion.h"
@@ -506,6 +507,7 @@ static void add_usb_capabilities(cJSON *root) {
     cJSON_AddItemToArray(capabilities, cJSON_CreateString("clear"));
     /* EYE_MOTION normal|calm|still, kept across restarts (1.2.0). */
     cJSON_AddItemToArray(capabilities, cJSON_CreateString("eye_motion"));
+    taby_usb_add_ble_v2_capability(capabilities, taby_identity_get(), taby_firmware_version());
     cJSON_AddItemToObject(root, "capabilities", capabilities);
 }
 

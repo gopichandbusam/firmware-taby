@@ -203,3 +203,161 @@ alone does not prove that the display or artwork is correct.
 - Disabled GitHub Actions in the personal repository settings. The two runs
   started before the policy change were cancelled; their historical records may
   remain visible, but no workflow file or enabled Actions setting remains.
+
+### Bluetooth-first design audit
+
+- Audited the existing USB, BLE, Wi-Fi/HTTP, shared command/runtime, onboarding,
+  and transport-preference firmware paths without changing firmware behavior.
+- Inspected the installed Taby 1.0.13 application bundle. It constructs USB and
+  Bluetooth physical transports, has no Wi-Fi physical transport, and only
+  offers Bluetooth when USB `INFO` advertises `bluetooth_v2`.
+- Confirmed the current firmware already registers BLE command/event/state/power
+  UUID suffixes `0002`-`0005`, but it lacks the app's protocol-2 choice (`0006`)
+  and identity (`0007`) characteristics and does not advertise
+  `bluetooth_v2`.
+- Confirmed from the installed native Bluetooth helper that choice `0006` is
+  strict JSON with `signal` and `choice`, while identity `0007` is strict JSON
+  with protocol `2`, `deviceId`, and `firmwareVersion`.
+- Chose a firmware-only Bluetooth-first scope: one-time USB enablement and
+  recovery, followed by app-compatible BLE animations, cards, timers, clear,
+  choices, orientation, and reconnect. Wi-Fi remains a separate secured Mac-app
+  project.
+- Added the proposed design at
+  `docs/superpowers/specs/2026-10-19-bluetooth-first-taby-design.md`. A fresh
+  builder review found one legacy one-button action ambiguity; the design
+  resolves it by mapping the primary action to the app's `left` choice.
+- No firmware implementation was started. The complete design awaits owner
+  approval before implementation planning.
+
+### Bluetooth-first plan approval stage
+
+- The owner approved the design and added explicit durability requirements:
+  all animations must work over BLE; the app must remember the board; and the
+  system must recover after app/device restart, power loss, battery depletion,
+  or cable removal once power is available again.
+- Clarified the physical limit: if USB is the only power source, unplugging it
+  turns the board off. With battery/alternate power, BLE should continue; with
+  no alternate power, persisted BLE must return after repower without repeating
+  USB setup.
+- Three parallel planning reviews audited protocol compatibility, NVS/boot
+  ordering, and the physical failure matrix. They identified the atomic
+  `TRANSPORT_MODE bluetooth` / `TRANSPORT_DEFAULT bluetooth` boundary as the
+  highest-risk implementation point.
+- Wrote the implementation plan at
+  `docs/superpowers/plans/2026-10-19-bluetooth-first-taby.md`. It uses host-first
+  tests, the installed Taby 1.0.13 native helper, clean builds for all three
+  boards, an 84-animation BLE sweep, restart/power/cable tests, and USB recovery
+  before delivery to personal `main`.
+- Firmware source changes have not started. The plan awaits the owner's final
+  confirmation.
+
+### Bluetooth-first Task 8 hardware verification
+
+- Packaged the reviewed `main` build at `f0a08cc` into fresh ignored
+  `work/dist-bluetooth-v2-task8/`, inspected the complete `amoled-1.64-v2`
+  bundle, and flashed the authorized V1.1/V2 board once. All five image hashes
+  and separate installer/USB metadata verification passed. NVS and factory
+  identity sectors were excluded; no full-chip erase or eFuse operation ran.
+- USB identity remained stable, with exactly one `bluetooth_v2` capability.
+  The complete ID was used only in process memory for comparison and
+  hardware-suite input; it was not persisted in tracked files.
+- Reopened Taby.app for the requested UI handoff, but read-only accessibility
+  discovery timed out. Closed the app and used the authorized same-connection
+  `TRANSPORT_MODE bluetooth` then `TRANSPORT_DEFAULT bluetooth` fallback.
+  MODE preserved the prior USB preference; DEFAULT ACK preceded verified
+  Bluetooth preference/ready/advertising. Later USB-reset startup retained
+  Bluetooth and automatically resumed advertising.
+- Hardware acceptance is **blocked**: the unchanged installed-helper suite
+  ran 12 tests in 51.141 seconds; eight harness tests passed, all four physical
+  tests failed at native-helper scan with `timeout`. Identity handshake,
+  choice/state, commands, all 84 animations/pairs, and reconnect were not
+  reached. Host Bluetooth is on; the timeout reproduced with the app closed
+  and a persistent USB session confirming advertising before and after scan.
+  The immediate scan blocker was later localized to incomplete macOS Bluetooth
+  privacy authorization; on-air discovery remained unmeasured at this stage.
+- App-driven Bluetooth selection, remembered-device behavior, visual playback,
+  and the separate physical power/restart matrix remain pending. Full raw
+  redacted evidence and diagnosis are in the ignored plan's
+  `task-8-report.md`. Taby.app is left closed and the board's saved transport
+  is Bluetooth. `.vscode/` was not touched.
+
+### Bluetooth discovery diagnosis and UUID correction
+
+- macOS unified logs localized the command-line helper scan timeout before radio
+  discovery: those runs were attributed to `com.openai.codex` and reached a
+  pending Bluetooth privacy prompt with no completed authorization before the
+  native helper's 12-second timeout. Static firmware and native-helper audits
+  found matching advertised service UUIDs and compatible candidate-name
+  normalization, so no advertising-name change was justified.
+- Found a separate compiled GATT defect: the identity characteristic initializer
+  contained only 15 bytes, producing
+  `00544142-5900-0040-00a0-000000000007` instead of
+  `54414259-0000-4000-a000-000000000007`. Added a compiled-byte regression test
+  for all service/characteristic UUIDs `0001` through `0007`, fixed the missing
+  zero byte, ran 123 host tests (118 passed, five expected skips), and received
+  a clean independent review. Commit: `1803bef`.
+- Rebuilt and packaged the corrected `amoled-1.64-v2` image; bundle inspection
+  passed and still excludes NVS/factory identity writes. The first reflash
+  attempt failed before connecting or writing any flash data, and both the
+  standard and USB-reset connection paths then received no serial data. The
+  previously installed firmware remains intact. A physical board reset or
+  USB power cycle is required before the corrected image can be flashed.
+- Bluetooth access toggles for ChatGPT/Codex and the signed Taby app are now
+  visibly enabled on the personal Mac. No credential was captured or stored.
+  The helper suite was not rerun because the board no longer answered serial
+  commands, so hardware BLE acceptance remains pending.
+
+### 2026-10-20 Bluetooth PR handoff
+
+- At the owner's request, prepared `feature/bluetooth-first` as a draft pull
+  request into the personal fork's `main` for office-device testing. GitHub
+  Actions remain disabled and no workflow was added.
+- The corrected `1803bef` V2 build and package completed and passed inspection,
+  but it was not flashed. The connection attempts failed before the bootloader
+  accepted a connection or any flash bytes were written; the earlier reviewed
+  image remains on the personal test board.
+- Physical BLE discovery/handshake, the 84-animation visual sweep, app restart,
+  power/battery/cable recovery, USB recovery, and work-Mac handoff remain
+  acceptance gates for the office test. The PR is not a released or
+  hardware-accepted firmware build.
+- The pre-PR verification gate passed on 2026-10-20: `tools/check.py` verified
+  all assets, partitions, and board metadata; the complete host suite ran 123
+  tests with 118 passes and five expected hardware/Pillow skips; and ESP-IDF
+  builds succeeded for `amoled-1.64`, `amoled-1.64-v2`, and `round-1.32`.
+- Pushed `feature/bluetooth-first` and opened draft personal-fork PR #2,
+  `https://github.com/gopichandbusam/firmware-taby/pull/2`, with the
+  `blast-radius: medium` and `enhancement` labels. Merge remains gated on the
+  office-device checks above.
+- Expanded the PR handoff to cover every preserved target: original
+  `amoled-1.64` V1, newer `amoled-1.64-v2` V1.1/V2, and original
+  `round-1.32`. Clean packages for all three were generated from `43878ff`,
+  inspected successfully, and each contained exactly five reviewed images with
+  `source_dirty: false` and no NVS/factory identity writes. Generated bundles
+  remain ignored and were not committed.
+- Added the board/firmware matrix, historical v1.0.8-v1.2.0 release links,
+  all-target build/package/inspect instructions, flash/verify routing, and
+  consistent target guides. The Bluetooth candidate still reports `1.2.0`, so
+  office testing must match `source_commit`; publication waits for a distinct
+  release version and hardware acceptance.
+
+### 2026-10-20 corrected V2 hardware recovery
+
+- Put the connected Waveshare 1.64-inch V1.1/V2 board into ROM download mode
+  with the documented BOOT/RESET sequence and flashed the inspected
+  `amoled-1.64-v2` bundle from source commit `7590388`. All five images wrote
+  and hash-verified; NVS and factory identity partitions were not written.
+- The board remained in download mode after flashing. Releasing BOOT and
+  pressing RESET alone started the application, matching the recovery note in
+  `INSTALL.md`; no second flash or full-chip erase was needed.
+- Fresh direct USB verification passed: the board reported firmware `1.2.0`,
+  assets `0.3.3`, target `amoled-1.64-v2`, 280x456 rectangular display,
+  Bluetooth preferred and onboarding complete, USB bridge ready, and normal
+  eye motion. The full device identity was not recorded.
+- A direct `confirmation` animation request was accepted and the owner
+  confirmed visible animation output. After reopening Taby.app, its Physical
+  Taby screen reported `Taby is connected over USB` and `Animation sent to
+  your Taby`.
+- This verifies corrected firmware boot, display/assets, direct USB protocol,
+  and desktop-app USB discovery on the personal Mac. Bluetooth discovery,
+  remembered reconnect, power-loss recovery, the complete animation sweep,
+  and work-Mac handoff remain separate acceptance gates.

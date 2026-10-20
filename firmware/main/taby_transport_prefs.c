@@ -45,10 +45,11 @@ static esp_err_t load_state_from_nvs(void) {
     nvs_close(handle);
 
     s_state.loaded = true;
-    s_state.onboarding_complete = onboarding_complete != 0;
     s_state.preferred_mode = (preferred_mode <= TABY_TRANSPORT_PREF_BLUETOOTH)
         ? (taby_transport_pref_t)preferred_mode
         : TABY_TRANSPORT_PREF_UNKNOWN;
+    s_state.onboarding_complete = onboarding_complete != 0 &&
+        s_state.preferred_mode != TABY_TRANSPORT_PREF_UNKNOWN;
     return ESP_OK;
 }
 
@@ -59,20 +60,22 @@ static esp_err_t ensure_loaded(void) {
     return load_state_from_nvs();
 }
 
-static esp_err_t persist_state(void) {
+static esp_err_t persist_state(taby_transport_pref_t preferred_mode, bool onboarding_complete) {
     nvs_handle_t handle;
     ESP_RETURN_ON_ERROR(nvs_open(TABY_TRANSPORT_NAMESPACE, NVS_READWRITE, &handle), TAG, "nvs open failed");
-    ESP_RETURN_ON_ERROR(
-        nvs_set_u8(handle, TABY_TRANSPORT_COMPLETE_KEY, s_state.onboarding_complete ? 1 : 0),
-        TAG,
-        "save onboarding complete failed");
-    ESP_RETURN_ON_ERROR(
-        nvs_set_u8(handle, TABY_TRANSPORT_PREF_KEY, (uint8_t)s_state.preferred_mode),
-        TAG,
-        "save preferred mode failed");
-    ESP_RETURN_ON_ERROR(nvs_commit(handle), TAG, "commit prefs failed");
+    esp_err_t err = nvs_set_u8(handle, TABY_TRANSPORT_COMPLETE_KEY, onboarding_complete ? 1 : 0);
+    if (err == ESP_OK) {
+        err = nvs_set_u8(handle, TABY_TRANSPORT_PREF_KEY, (uint8_t)preferred_mode);
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(handle);
+    }
     nvs_close(handle);
-    return ESP_OK;
+    if (err == ESP_OK) {
+        s_state.preferred_mode = preferred_mode;
+        s_state.onboarding_complete = onboarding_complete;
+    }
+    return err;
 }
 
 esp_err_t taby_transport_prefs_init(void) {
@@ -139,9 +142,7 @@ esp_err_t taby_transport_set_preferred_mode(
     }
 
     ESP_RETURN_ON_ERROR(ensure_loaded(), TAG, "load prefs failed");
-    s_state.preferred_mode = preferred_mode;
-    s_state.onboarding_complete = onboarding_complete;
-    return persist_state();
+    return persist_state(preferred_mode, onboarding_complete);
 }
 
 esp_err_t taby_transport_reset_incomplete_on_boot(void) {
@@ -150,14 +151,10 @@ esp_err_t taby_transport_reset_incomplete_on_boot(void) {
         return ESP_OK;
     }
 
-    s_state.preferred_mode = TABY_TRANSPORT_PREF_UNKNOWN;
-    s_state.onboarding_complete = false;
-    return persist_state();
+    return persist_state(TABY_TRANSPORT_PREF_UNKNOWN, false);
 }
 
 esp_err_t taby_transport_clear_onboarding(void) {
     ESP_RETURN_ON_ERROR(ensure_loaded(), TAG, "load prefs failed");
-    s_state.preferred_mode = TABY_TRANSPORT_PREF_UNKNOWN;
-    s_state.onboarding_complete = false;
-    return persist_state();
+    return persist_state(TABY_TRANSPORT_PREF_UNKNOWN, false);
 }
