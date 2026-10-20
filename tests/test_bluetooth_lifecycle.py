@@ -43,7 +43,8 @@ class BluetoothLifecycleTests(unittest.TestCase):
         ble = (MAIN / "taby_ble_transport.c").read_text()
         # Include production constants and state, not test copies of policy.
         globals_text = ble[ble.index("#define TABY_BLE_DEVICE_NAME_SIZE"):ble.index('#if __has_include')]
-        functions = ["clear_last_error", "set_last_error", "reset_transport_runtime_state", "build_device_name",
+        functions = ["clear_last_error", "set_last_error", "set_last_event_payload", "publish_event_payload",
+                     "notify_last_event_payload", "reset_transport_runtime_state", "build_device_name",
                      "gap_event_handler", "start_advertising", "on_sync", "on_reset",
                      "taby_ble_transport_init", "taby_ble_transport_shutdown",
                      "taby_ble_transport_ensure_advertising", "taby_ble_transport_is_ready",
@@ -217,3 +218,8 @@ class BluetoothLifecycleTests(unittest.TestCase):
     def test_already_advertising_response_preserves_true_state_without_retry(self):
         result = self.run_case("mode_bt", failure="already")
         self.assertEqual((result["advertising"], result["controller_active"], result["pending"], result["error"]), ("1", "1", "0", "none"))
+
+    def test_subscription_notification_allows_synchronous_notify_tx_reentry(self):
+        result = self.run_case("subscribe_notify")
+        self.assertEqual((result["notifications"], result["notify_tx_returned"], result["notification_payload"]), ("1", "1", "READY"))
+        self.assertEqual((result["ready"], result["advertising"], result["adv_calls"], result["pending"]), ("1", "0", "1", "0"))

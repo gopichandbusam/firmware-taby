@@ -741,9 +741,6 @@ static int gap_event_handler_locked(struct ble_gap_event *event, void *arg) {
             if (event->subscribe.attr_handle == s_event_value_handle) {
                 s_notify_enabled = event->subscribe.cur_notify != 0;
                 ESP_LOGI(TAG, "notify subscription=%d", s_notify_enabled ? 1 : 0);
-                if (s_notify_enabled) {
-                    notify_last_event_payload();
-                }
             }
             return 0;
         case BLE_GAP_EVENT_CONN_UPDATE:
@@ -771,7 +768,14 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         return 0;
     }
     int rc = gap_event_handler_locked(event, arg);
+    bool notify_subscription = event->type == BLE_GAP_EVENT_SUBSCRIBE &&
+        event->subscribe.attr_handle == s_event_value_handle && s_notify_enabled;
     advertising_state_unlock();
+    /* NimBLE dispatches NOTIFY_TX synchronously from notify_custom. Release
+     * the lifecycle mutex before that API can re-enter this GAP handler. */
+    if (notify_subscription) {
+        notify_last_event_payload();
+    }
     return rc;
 }
 

@@ -60,7 +60,7 @@ typedef int taby_ble_command_job_t;
 #define NIMBLE_CORE 0
 #define configMAX_PRIORITIES 25
 enum { BLE_GAP_EVENT_CONNECT, BLE_GAP_EVENT_DISCONNECT, BLE_GAP_EVENT_SUBSCRIBE,
-       BLE_GAP_EVENT_CONN_UPDATE, BLE_GAP_EVENT_ADV_COMPLETE, BLE_GAP_EVENT_MTU };
+       BLE_GAP_EVENT_CONN_UPDATE, BLE_GAP_EVENT_ADV_COMPLETE, BLE_GAP_EVENT_MTU, BLE_GAP_EVENT_NOTIFY_TX };
 struct ble_gap_event {
     int type;
     struct { int status; uint16_t conn_handle; } connect;
@@ -106,7 +106,11 @@ typedef pthread_mutex_t *SemaphoreHandle_t;
 #define pdTRUE 1
 static SemaphoreHandle_t xSemaphoreCreateMutex(void) {
     pthread_mutex_t *mutex = malloc(sizeof(*mutex));
-    assert(mutex && pthread_mutex_init(mutex, NULL) == 0);
+    pthread_mutexattr_t attr;
+    assert(pthread_mutexattr_init(&attr) == 0);
+    assert(pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_ERRORCHECK) == 0);
+    assert(mutex && pthread_mutex_init(mutex, &attr) == 0);
+    pthread_mutexattr_destroy(&attr);
     return mutex;
 }
 static int xSemaphoreTake(SemaphoreHandle_t mutex, int ticks) {
@@ -115,7 +119,12 @@ static int xSemaphoreTake(SemaphoreHandle_t mutex, int ticks) {
     assert(rc == EBUSY);
     if (race_enabled && ticks) observe_contender();
     if (!ticks) return 0;
-    assert(pthread_mutex_lock(mutex) == 0);
+    rc = pthread_mutex_lock(mutex);
+    if (rc == EDEADLK) {
+        fprintf(stderr, "recursive lifecycle mutex acquisition would deadlock\n");
+        abort();
+    }
+    assert(rc == 0);
     return pdTRUE;
 }
 static void xSemaphoreGive(SemaphoreHandle_t mutex) { assert(pthread_mutex_unlock(mutex) == 0); }
@@ -126,8 +135,25 @@ static const char *esp_err_to_name(int err) { return err == ESP_OK ? "ESP_OK" : 
 static int bt_controller_status_for_log(void) { return 0; }
 static uint32_t esp_get_free_heap_size(void) { return 100000; }
 static uint32_t heap_caps_get_free_size(int caps) { return 100000; }
-static void publish_event_payload(const char *payload, bool notify) {}
-static void notify_last_event_payload(void) {}
+struct os_mbuf { char payload[128]; };
+static int notifications, notify_tx_returned;
+static char notification_payload[128] = "none";
+static struct os_mbuf *ble_hs_mbuf_from_flat(const void *payload, size_t len) {
+    static struct os_mbuf mbuf;
+    assert(len < sizeof(mbuf.payload));
+    memcpy(mbuf.payload, payload, len); mbuf.payload[len] = '\0';
+    return &mbuf;
+}
+static int ble_gatts_notify_custom(uint16_t conn, uint16_t attr, struct os_mbuf *om) {
+    assert(conn == 10 && attr == 23);
+    notifications++;
+    snprintf(notification_payload, sizeof(notification_payload), "%s", om->payload);
+    /* NimBLE reports completion synchronously before this API returns. */
+    struct ble_gap_event event = {.type = BLE_GAP_EVENT_NOTIFY_TX};
+    assert(gap_event_handler(&event, NULL) == 0);
+    notify_tx_returned++;
+    return 0;
+}
 static void request_fast_connection_params(uint16_t conn) {}
 static bool taby_ble_v2_format_identity_json(const char *id, const char *version, char *out, size_t n) { snprintf(out, n, "identity"); return true; }
 static const char *taby_firmware_version(void) { return "test"; }
@@ -288,6 +314,20 @@ int main(int argc, char **argv) {
         else {
             assert(taby_ble_transport_init(&identity) == ESP_OK);
             if (!strncmp(op, "race_", 5)) run_race(op);
+            else if (!strcmp(op, "subscribe_notify")) {
+                s_event_value_handle = 23;
+                controller_active = false;
+                struct ble_gap_event e = {.type = BLE_GAP_EVENT_CONNECT};
+                e.connect.conn_handle = 10;
+                gap_event_handler(&e, NULL);
+                e.type = BLE_GAP_EVENT_SUBSCRIBE;
+                e.subscribe.attr_handle = 23;
+                e.subscribe.cur_notify = 1;
+                gap_event_handler(&e, NULL);
+                e.subscribe.cur_notify = 0;
+                gap_event_handler(&e, NULL);
+                taby_ble_transport_ensure_advertising();
+            }
             else if (!strcmp(op, "delayed_shutdown")) {
                 delay_shutdown_callbacks = true;
                 taby_ble_transport_shutdown();
@@ -320,10 +360,11 @@ int main(int argc, char **argv) {
     }
     printf("result=%d starts=%d stops=%d adv_calls=%d durable=%d live=%d commits=%d ready=%d advertising=%d "
            "ready_at_commit=%d pref_at_stop=%d shown=%d usb=%d display=%d onboarding=%d usb_before_ble=%d "
-           "pending=%d backoff=%d before_resync=%d controller_active=%d duplicates=%d starts_after_stop_intent=%d ensure_returned_while_paused=%d error=%s\n", result, starts, stops, adv_calls, durable.pref,
+           "pending=%d backoff=%d before_resync=%d controller_active=%d duplicates=%d starts_after_stop_intent=%d ensure_returned_while_paused=%d notifications=%d notify_tx_returned=%d notification_payload=%s error=%s\n", result, starts, stops, adv_calls, durable.pref,
            taby_transport_preferred_mode(), commits, taby_ble_transport_is_ready(), taby_ble_transport_is_advertising(),
            ready_at_commit, pref_at_stop, shown, usb, display, onboarding, usb_before_ble,
            timer && timer->pending, backoff, before_resync, controller_active, duplicates, starts_after_stop_intent, ensure_returned_while_paused,
+           notifications, notify_tx_returned, notification_payload,
            taby_ble_transport_last_error()[0] ? taby_ble_transport_last_error() : "none");
     return 0;
 }
