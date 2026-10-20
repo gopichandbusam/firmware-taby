@@ -4,6 +4,7 @@ idf_component_register(
         "board_amoled_1_64.c"
         "dns_server.c"
         "taby_ble_transport.c"
+        "taby_ble_protocol_v2.c"
         "taby_asset_store.c"
         "taby_animation_assets.c"
         "taby_build_info.c"
