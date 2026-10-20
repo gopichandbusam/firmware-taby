@@ -203,3 +203,28 @@ alone does not prove that the display or artwork is correct.
 - Disabled GitHub Actions in the personal repository settings. The two runs
   started before the policy change were cancelled; their historical records may
   remain visible, but no workflow file or enabled Actions setting remains.
+
+### Bluetooth-first design audit
+
+- Audited the existing USB, BLE, Wi-Fi/HTTP, shared command/runtime, onboarding,
+  and transport-preference firmware paths without changing firmware behavior.
+- Inspected the installed Taby 1.0.13 application bundle. It constructs USB and
+  Bluetooth physical transports, has no Wi-Fi physical transport, and only
+  offers Bluetooth when USB `INFO` advertises `bluetooth_v2`.
+- Confirmed the current firmware already registers BLE command/event/state/power
+  UUID suffixes `0002`-`0005`, but it lacks the app's protocol-2 choice (`0006`)
+  and identity (`0007`) characteristics and does not advertise
+  `bluetooth_v2`.
+- Confirmed from the installed native Bluetooth helper that choice `0006` is
+  strict JSON with `signal` and `choice`, while identity `0007` is strict JSON
+  with protocol `2`, `deviceId`, and `firmwareVersion`.
+- Chose a firmware-only Bluetooth-first scope: one-time USB enablement and
+  recovery, followed by app-compatible BLE animations, cards, timers, clear,
+  choices, orientation, and reconnect. Wi-Fi remains a separate secured Mac-app
+  project.
+- Added the proposed design at
+  `docs/superpowers/specs/2026-10-19-bluetooth-first-taby-design.md`. A fresh
+  builder review found one legacy one-button action ambiguity; the design
+  resolves it by mapping the primary action to the app's `left` choice.
+- No firmware implementation was started. The complete design awaits owner
+  approval before implementation planning.

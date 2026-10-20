@@ -60,6 +60,18 @@ computer or improve the project later.
 - The device accepted `idle_01_loop`, and Taby 1.0.13 reports `Physical Taby
   Connected`. Physical screen visibility still requires the owner's direct
   confirmation; a successful USB response is not proof of visible pixels.
+- A Bluetooth-first compatibility design is proposed at
+  `docs/superpowers/specs/2026-10-19-bluetooth-first-taby-design.md`. The
+  installed Taby 1.0.13 already contains USB and BLE transports but no Wi-Fi
+  physical transport. Its BLE protocol 2 requires choice JSON on GATT UUID
+  suffix `0006`, identity JSON on `0007`, and the USB `bluetooth_v2`
+  capability; this firmware currently provides only suffixes `0002`-`0005` and
+  does not advertise that capability.
+- The proposed first wireless release keeps one-time USB setup/update/recovery,
+  then uses BLE for animations, cards, timers, clear, choices, orientation, and
+  reconnect. Wi-Fi is deferred because it needs Mac app work and authenticated
+  local control. Firmware implementation has not started and awaits owner
+  approval of the complete design.
 
 ## Hardware revision notes
 
@@ -77,14 +89,15 @@ size. Select the target from the physical PCB marking or known purchase revision
 
 ## Next steps
 
-1. Get the owner's visual confirmation that `idle_01_loop` is now visible.
-2. If visible, test touch, tilt, and a second animation on the physical board.
-3. Finish the desktop app's separate Brain download only when the owner wants
+1. Get the owner's approval of the complete Bluetooth-first design.
+2. After approval, write the implementation plan before changing firmware.
+3. Get the owner's visual confirmation that `idle_01_loop` is now visible.
+4. If visible, test touch, tilt, and a second animation on the physical board.
+5. Finish the desktop app's separate Brain download only when the owner wants
    the local AI features; it is not required for firmware or USB detection.
-4. Before merging or opening an upstream PR, obtain senior/upstream review
-   because adding `amoled-1.64-v2` expands the externally reported
-   `hardware_target` contract.
-5. On the other work computer, clone this branch, run `python3 tools/bootstrap.py`,
+6. Before a public/upstream Bluetooth release, obtain security/API-contract
+   review because Taby 1.0.13 expects unbonded BLE protocol 2.
+7. On the other work computer, clone this branch, run `python3 tools/bootstrap.py`,
    connect the board, and use `tools/device.py ports` and `info`; reflashing is
    unnecessary unless the firmware changes.
 
