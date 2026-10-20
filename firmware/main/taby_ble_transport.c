@@ -25,6 +25,7 @@
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
 #include "taby_mqtt.h"
+#include "taby_ble_protocol_v2.h"
 #include "taby_power.h"
 #include "taby_build_info.h"
 #include "taby_display.h"
@@ -37,6 +38,8 @@ static const char *TAG = "taby_ble_transport";
 
 #define TABY_BLE_DEVICE_NAME_SIZE 32
 #define TABY_BLE_EVENT_PAYLOAD_SIZE 128
+#define TABY_BLE_IDENTITY_PAYLOAD_SIZE 704
+#define TABY_BLE_CHOICE_PAYLOAD_SIZE 64
 #define TABY_BLE_COMMAND_BUFFER_SIZE 256
 #define TABY_BLE_COMMAND_QUEUE_LENGTH 4
 #define TABY_BLE_COMMAND_TASK_STACK_SIZE 4096
@@ -60,6 +63,12 @@ static const ble_uuid128_t k_taby_state_characteristic_uuid =
 static const ble_uuid128_t k_taby_power_characteristic_uuid =
     BLE_UUID128_INIT(0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0,
                      0x00, 0x40, 0x00, 0x00, 0x59, 0x42, 0x41, 0x54);
+static const ble_uuid128_t k_taby_choice_characteristic_uuid =
+    BLE_UUID128_INIT(0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0,
+                     0x00, 0x40, 0x00, 0x00, 0x59, 0x42, 0x41, 0x54);
+static const ble_uuid128_t k_taby_identity_characteristic_uuid =
+    BLE_UUID128_INIT(0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0,
+                     0x00, 0x40, 0x00, 0x00, 0x59, 0x42, 0x41, 0x54);
 
 static char s_device_name[TABY_BLE_DEVICE_NAME_SIZE] = "Taby";
 static char s_last_event_payload[TABY_BLE_EVENT_PAYLOAD_SIZE] = "READY";
@@ -70,6 +79,9 @@ static uint16_t s_command_value_handle = 0;
 static uint16_t s_event_value_handle = 0;
 static uint16_t s_state_value_handle = 0;
 static uint16_t s_power_value_handle = 0;
+static uint16_t s_choice_value_handle = 0;
+static uint16_t s_identity_value_handle = 0;
+static char s_identity_payload[TABY_BLE_IDENTITY_PAYLOAD_SIZE] = "";
 static bool s_notify_enabled = false;
 static bool s_started = false;
 static bool s_advertising = false;
@@ -269,6 +281,9 @@ static void reset_transport_runtime_state(void) {
     s_event_value_handle = 0;
     s_state_value_handle = 0;
     s_power_value_handle = 0;
+    s_choice_value_handle = 0;
+    s_identity_value_handle = 0;
+    s_identity_payload[0] = '\0';
     publish_event_payload("READY", false);
 }
 
@@ -521,6 +536,50 @@ static int power_characteristic_access(
     return 0;
 }
 
+static int choice_characteristic_access(
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    struct ble_gatt_access_ctxt *ctxt,
+    void *arg) {
+    (void)conn_handle;
+    (void)attr_handle;
+    (void)arg;
+
+    if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+
+    taby_reusable_choice_signal_t choice = {0};
+    taby_reusable_ui_read_choice_signal(&choice);
+    char payload[TABY_BLE_CHOICE_PAYLOAD_SIZE];
+    if (!taby_ble_v2_format_choice_json(choice.signal, choice.selection,
+                                         payload, sizeof(payload))) {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    if (os_mbuf_append(ctxt->om, payload, strlen(payload)) != 0) {
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return 0;
+}
+
+static int identity_characteristic_access(
+    uint16_t conn_handle,
+    uint16_t attr_handle,
+    struct ble_gatt_access_ctxt *ctxt,
+    void *arg) {
+    (void)conn_handle;
+    (void)attr_handle;
+    (void)arg;
+
+    if (ctxt->op != BLE_GATT_ACCESS_OP_READ_CHR || s_identity_payload[0] == '\0') {
+        return BLE_ATT_ERR_UNLIKELY;
+    }
+    if (os_mbuf_append(ctxt->om, s_identity_payload, strlen(s_identity_payload)) != 0) {
+        return BLE_ATT_ERR_INSUFFICIENT_RES;
+    }
+    return 0;
+}
+
 static const struct ble_gatt_svc_def k_gatt_services[] = {
     {
         .type = BLE_GATT_SVC_TYPE_PRIMARY,
@@ -549,6 +608,18 @@ static const struct ble_gatt_svc_def k_gatt_services[] = {
                 .access_cb = power_characteristic_access,
                 .flags = BLE_GATT_CHR_F_READ,
                 .val_handle = &s_power_value_handle,
+            },
+            {
+                .uuid = &k_taby_choice_characteristic_uuid.u,
+                .access_cb = choice_characteristic_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .val_handle = &s_choice_value_handle,
+            },
+            {
+                .uuid = &k_taby_identity_characteristic_uuid.u,
+                .access_cb = identity_characteristic_access,
+                .flags = BLE_GATT_CHR_F_READ,
+                .val_handle = &s_identity_value_handle,
             },
             {0},
         },
@@ -837,9 +908,17 @@ esp_err_t taby_ble_transport_init(const taby_identity_t *identity) {
         return ESP_OK;
     }
 
-    build_device_name(identity);
     clear_last_error();
     reset_transport_runtime_state();
+    if (!identity ||
+        !memchr(identity->device_id, '\0', sizeof(identity->device_id)) ||
+        !taby_ble_v2_format_identity_json(
+            identity->device_id, taby_firmware_version(),
+            s_identity_payload, sizeof(s_identity_payload))) {
+        set_last_error("ble_v2_identity_unavailable");
+        return ESP_ERR_INVALID_ARG;
+    }
+    build_device_name(identity);
 
     ESP_LOGI(
         TAG,
