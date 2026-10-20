@@ -29,15 +29,45 @@ static bool valid_firmware_version(const char *version) {
     if (!version || !version[0]) {
         return false;
     }
-    for (size_t i = 0; i <= TABY_BLE_FIRMWARE_VERSION_MAX; ++i) {
-        if (!version[i]) {
-            return true;
+    size_t i = 0;
+    while (i < TABY_BLE_FIRMWARE_VERSION_MAX && version[i]) {
+        unsigned char lead = (unsigned char)version[i];
+        if (lead < 0x80) {
+            ++i;
+            continue;
         }
-        if (i == TABY_BLE_FIRMWARE_VERSION_MAX) {
+
+        size_t continuation_count;
+        unsigned char first_min = 0x80;
+        unsigned char first_max = 0xbf;
+        if (lead >= 0xc2 && lead <= 0xdf) {
+            continuation_count = 1;
+        } else if (lead >= 0xe0 && lead <= 0xef) {
+            continuation_count = 2;
+            if (lead == 0xe0) first_min = 0xa0;
+            if (lead == 0xed) first_max = 0x9f;
+        } else if (lead >= 0xf0 && lead <= 0xf4) {
+            continuation_count = 3;
+            if (lead == 0xf0) first_min = 0x90;
+            if (lead == 0xf4) first_max = 0x8f;
+        } else {
             return false;
         }
+
+        if (i + continuation_count >= TABY_BLE_FIRMWARE_VERSION_MAX) {
+            return false;
+        }
+        for (size_t j = 1; j <= continuation_count; ++j) {
+            unsigned char ch = (unsigned char)version[i + j];
+            unsigned char low = j == 1 ? first_min : 0x80;
+            unsigned char high = j == 1 ? first_max : 0xbf;
+            if (ch < low || ch > high) {
+                return false;
+            }
+        }
+        i += continuation_count + 1;
     }
-    return false;
+    return version[i] == '\0';
 }
 
 bool taby_ble_v2_identity_available(const char *device_id, const char *firmware_version) {

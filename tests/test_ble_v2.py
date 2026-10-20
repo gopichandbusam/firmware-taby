@@ -90,6 +90,20 @@ class BleV2Tests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(json.loads(payload)["firmwareVersion"], version)
 
+    def test_invalid_utf8_firmware_version_is_unavailable_and_never_formatted(self):
+        for version_bytes in (b"\x80", b"\xc0\xaf", b"\xe2\x82", b"\xed\xa0\x80", b"\xf4\x90\x80\x80"):
+            with self.subTest(version_bytes=version_bytes):
+                reply = self.run_driver("version-hex", version_bytes.hex())
+                self.assertEqual(reply, "0\t0\t")
+
+    def test_valid_utf8_firmware_version_round_trips(self):
+        version = "v-é😀"
+        available, formatted, payload_hex = self.run_driver(
+            "version-hex", version.encode("utf-8").hex()).split("\t")
+        self.assertEqual((available, formatted), ("1", "1"))
+        payload = bytes.fromhex(payload_hex).decode("utf-8")
+        self.assertEqual(json.loads(payload)["firmwareVersion"], version)
+
     def test_null_inputs_and_output_cannot_return_identity_payload(self):
         for options in ({"null_id": True}, {"null_version": True}, {"null_out": True}):
             with self.subTest(options=options):
