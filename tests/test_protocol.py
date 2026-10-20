@@ -98,6 +98,45 @@ class DisplayCommandTests(DriverTestCase):
                     self.assertEqual(reply["result"], "applied", reply)
                     self.assertEqual(reply["animation_id"], reply["input"])
 
+    def test_every_manifest_animation_uses_the_bluetooth_reply_path(self):
+        for board in self.boards:
+            ids = [item["id"] for item in board_catalog(board)["animations"]]
+            with self.subTest(board=board):
+                replies = self.handle(ids, board, prefix="", echo=False)
+                self.assertEqual(len(replies), len(ids))
+                for animation_id, reply in zip(ids, replies):
+                    with self.subTest(animation_id=animation_id):
+                        self.assertEqual(reply["result"], "applied", reply)
+                        self.assertEqual(reply["animation_id"], animation_id)
+                        self.assertEqual(reply["reply"], "OK ANIMATION")
+                        self.assertNotIn("unsupported_animation", reply["reply"])
+
+    def test_manifest_intro_loop_pairs_resolve_through_bluetooth(self):
+        for board in self.boards:
+            ids = {item["id"] for item in board_catalog(board)["animations"]}
+            pairs = [(animation_id, animation_id[:-3] + "_loop")
+                     for animation_id in sorted(ids)
+                     if animation_id.endswith("_in") and animation_id[:-3] + "_loop" in ids]
+            with self.subTest(board=board):
+                for intro_id, loop_id in pairs:
+                    with self.subTest(intro=intro_id, loop=loop_id):
+                        reply = self.handle([f"{intro_id}>{loop_id}"], board,
+                                            prefix="", echo=False)[0]
+                        self.assertEqual(reply["result"], "applied", reply)
+                        self.assertEqual(reply["animation_id"], intro_id)
+                        self.assertEqual(reply["next_animation_id"], loop_id)
+                        self.assertEqual(reply["reply"], "OK ANIMATION")
+
+    def test_unknown_bluetooth_animation_does_not_block_the_next_command(self):
+        rejected, applied = self.handle(["dizzy_loop", "confirmation"], prefix="", echo=False)
+        self.assertEqual(rejected["result"], "unsupported_animation")
+        self.assertFalse(rejected["applied"])
+        self.assertEqual(rejected["reply"], "OK IDLE unsupported_animation dizzy_loop")
+
+        self.assertEqual(applied["result"], "applied", applied)
+        self.assertEqual(applied["animation_id"], "confirmation")
+        self.assertEqual(applied["reply"], "OK ANIMATION")
+
     def test_an_id_with_no_clip_is_answered_ok_and_changes_nothing(self):
         idle, played, ignored, *rest = self.handle(["S", "confirmation", *DESKTOP_IDS_WITHOUT_CLIPS])
         self.assertEqual(idle["reply"], "TABY:OK IDLE")
