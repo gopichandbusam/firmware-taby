@@ -270,6 +270,15 @@ in its companion settings. The app owns the USB connection while it is running.
 Exact settings labels depend on the app version. This repository installs device
 firmware, not the desktop application, and does not create an account or claim a device.
 
+The unreleased `feature/bluetooth-first` candidate for Taby 1.0.13 can use that
+first USB connection to select Bluetooth as its persistent default. USB remains
+the installation, update, diagnostic, and recovery route. On each Mac, grant
+Bluetooth access to the signed Taby app when macOS asks; the app remembers a
+CoreBluetooth peripheral plus the stable Taby device ID, not an OS-level bonded
+or passkey-paired device. Use one controlling Mac at a time. This unbonded
+candidate still requires office-device BLE, display, reconnect, and power-cycle
+acceptance before merge; see [the hardware-test guide](tests/hardware/README.md).
+
 For a custom project, use the [documented device commands](firmware/README.md#talk-to-taby).
 An MCP server is not needed to install firmware. We maintain the app integration;
 authors maintain their own MCP servers and other clients.

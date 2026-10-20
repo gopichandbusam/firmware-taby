@@ -1,6 +1,6 @@
 # Taby project memory
 
-Last updated: 2026-10-19
+Last updated: 2026-10-20
 
 ## Goal
 
@@ -11,12 +11,13 @@ computer or improve the project later.
 
 ## Current state
 
-- Primary repository: `gopichandbusam/firmware-taby`, branch `main`. The
-  personal fork is local remote `origin`; the original
-  `TRIIIS-LABS/firmware-taby` repository is remote `upstream`.
-- Personal development happens directly on `main`; the owner does not want
-  feature branches or GitHub Actions in this fork. The workflow file is absent
-  and Actions are disabled in the personal repository settings.
+- Primary repository: `gopichandbusam/firmware-taby`. The personal fork is
+  local remote `origin`; the original `TRIIIS-LABS/firmware-taby` repository is
+  remote `upstream`.
+- The Bluetooth-first work is on `feature/bluetooth-first` for a draft pull
+  request into the personal fork's `main`, at the owner's explicit request for
+  office-device review. The fork still has no GitHub Actions workflow and
+  Actions remain disabled.
 - Connected hardware was detected by macOS as an ESP32-S3 native USB
   Serial/JTAG device. The exact `/dev/cu.usbmodem...` name is machine-specific
   and may change after reset or when moving to another computer.
@@ -51,9 +52,10 @@ computer or improve the project later.
   selects GPIO46 only for V1.1/V2.
 - ESP-IDF 5.4.2 is installed under ignored `work/esp-idf-v5.4.2`; the required
   host tools CMake and Ninja were installed with Homebrew.
-- The V2 target passed `tools/check.py`, all 56 runnable unit tests, an ESP-IDF
-  production build, release packaging, and bundle inspection. Clean production
-  builds also passed for the unchanged `amoled-1.64` and `round-1.32` targets.
+- The original V2-board work passed its then-current repository suite and clean
+  builds for all three targets. The later Bluetooth candidate at `1803bef`
+  passed `tools/check.py` and 123 host tests (118 passed, five expected hardware
+  skips); the corrected V2 target also rebuilt, packaged, and inspected.
 - The custom bundle was flashed successfully. Every image hash verified, and
   post-flash USB verification reports firmware `1.2.0`, assets `0.3.3`, target
   `amoled-1.64-v2`, rectangle `280 x 456`, and `usb_bridge_ready: true`.
@@ -62,20 +64,38 @@ computer or improve the project later.
   confirmation; a successful USB response is not proof of visible pixels.
 - The owner approved the Bluetooth-first compatibility design on 2026-10-19 at
   `docs/superpowers/specs/2026-10-19-bluetooth-first-taby-design.md`. The
-  installed Taby 1.0.13 already contains USB and BLE transports but no Wi-Fi
-  physical transport. Its BLE protocol 2 requires choice JSON on GATT UUID
-  suffix `0006`, identity JSON on `0007`, and the USB `bluetooth_v2`
-  capability; this firmware currently provides only suffixes `0002`-`0005` and
-  does not advertise that capability.
+  installed Taby 1.0.13 contains USB and BLE transports but no Wi-Fi physical
+  transport. The firmware now implements its BLE protocol 2 contract: choice
+  JSON on GATT UUID suffix `0006`, identity JSON on `0007`, and the gated USB
+  `bluetooth_v2` capability, while preserving suffixes `0002`-`0005`.
 - The approved first wireless release keeps one-time USB setup/update/recovery,
   then uses BLE for animations, cards, timers, clear, choices, orientation, and
   reconnect. Wi-Fi is deferred because it needs Mac app work and authenticated
   local control.
 - The implementation plan is at
-  `docs/superpowers/plans/2026-10-19-bluetooth-first-taby.md`. It makes the
-  USB-to-BLE preference commit atomic, covers all 84 AMOLED animation IDs,
-  tests app/device restart and restored power, and retains USB recovery. The
-  plan awaits the owner's final confirmation before firmware edits begin.
+  `docs/superpowers/plans/2026-10-19-bluetooth-first-taby.md`. Tasks 1-7 are
+  implemented with host coverage for protocol payloads, all manifest
+  animations, atomic preference writes, advertising/reconnect lifecycle, and
+  the installed-helper harness. USB remains initialized for recovery.
+- A reviewed build at `f0a08cc` was flashed successfully and proved stable USB
+  identity, the `bluetooth_v2` capability, atomic Bluetooth-default handoff,
+  and preference restoration after reset. Its real-helper BLE tests stopped at
+  macOS Bluetooth privacy authorization before discovery.
+- A later compiled-byte test found and fixed the identity UUID at `1803bef`.
+  All host tests and the corrected V2 build/package passed, but the connected
+  board stopped responding before the corrected image could be flashed. No
+  flash data was written by those failed connection attempts, so the earlier
+  image remains installed.
+- macOS System Settings on the personal Mac now visibly shows Bluetooth access
+  enabled for both ChatGPT/Codex and Taby, but no successful BLE connection was
+  established. Permission is per Mac and must be checked again at the office.
+  The helper suite has not yet been rerun because the current board no longer
+  answers serial commands. The corrected build still needs office-device
+  flashing and BLE/visual/lifecycle acceptance.
+- The 2026-10-20 pre-PR gate passed from the candidate tree: repository checks,
+  123 host tests (118 passed, five expected skips), and ESP-IDF builds for all
+  three targets. These results verify source/build compatibility, not physical
+  BLE or visible display behavior.
 - "Paired" for this personal compatibility build means Taby.app remembers the
   CoreBluetooth peripheral ID plus the stable device ID; Taby 1.0.13 does not
   perform OS-level BLE bonding/passkey pairing. The board cannot operate while
@@ -97,10 +117,13 @@ size. Select the target from the physical PCB marking or known purchase revision
 
 ## Next steps
 
-1. Get the owner's confirmation of the Bluetooth implementation plan.
-2. Execute the plan with parallel sub-agents, host tests first, directly on
-   personal `main`.
-3. Flash the completed V2 build and run the installed-app/helper BLE tests.
+1. Review the draft pull request from `feature/bluetooth-first` into the
+   personal fork's `main`; do not merge it merely because host/build checks pass.
+2. On the office device, build/package or use the inspected corrected V2 bundle
+   from commit `1803bef` or later, flash it, and verify the exact compiled
+   identity UUID before running BLE acceptance.
+3. Run the installed-app/helper BLE tests after confirming macOS Bluetooth
+   access for Taby; record only a redacted device-ID suffix.
 4. Physically validate the full manifest-driven animation sweep and lifecycle
    recovery; do not treat protocol acceptance as proof of visible output.
 5. Test the work-Mac handoff when that computer is available.
@@ -108,9 +131,10 @@ size. Select the target from the physical PCB marking or known purchase revision
    the local AI features; it is not required for firmware or USB detection.
 7. Before a public/upstream Bluetooth release, obtain security/API-contract
    review because Taby 1.0.13 expects unbonded BLE protocol 2.
-8. On the other work computer, clone this branch, run `python3 tools/bootstrap.py`,
-   connect the board, and use `tools/device.py ports` and `info`; reflashing is
-   unnecessary unless the firmware changes.
+8. On the other work computer, check out the pull-request branch, run
+   `python3 tools/bootstrap.py`, connect the board, and use
+   `tools/device.py ports` and `info`. The office board must be flashed because
+   the corrected UUID build has not yet been installed on hardware.
 
 ## Keeping the personal fork updated
 

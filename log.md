@@ -250,3 +250,77 @@ alone does not prove that the display or artwork is correct.
   before delivery to personal `main`.
 - Firmware source changes have not started. The plan awaits the owner's final
   confirmation.
+
+### Bluetooth-first Task 8 hardware verification
+
+- Packaged the reviewed `main` build at `f0a08cc` into fresh ignored
+  `work/dist-bluetooth-v2-task8/`, inspected the complete `amoled-1.64-v2`
+  bundle, and flashed the authorized V1.1/V2 board once. All five image hashes
+  and separate installer/USB metadata verification passed. NVS and factory
+  identity sectors were excluded; no full-chip erase or eFuse operation ran.
+- USB identity remained stable, with exactly one `bluetooth_v2` capability.
+  The complete ID was used only in process memory for comparison and
+  hardware-suite input; it was not persisted in tracked files.
+- Reopened Taby.app for the requested UI handoff, but read-only accessibility
+  discovery timed out. Closed the app and used the authorized same-connection
+  `TRANSPORT_MODE bluetooth` then `TRANSPORT_DEFAULT bluetooth` fallback.
+  MODE preserved the prior USB preference; DEFAULT ACK preceded verified
+  Bluetooth preference/ready/advertising. Later USB-reset startup retained
+  Bluetooth and automatically resumed advertising.
+- Hardware acceptance is **blocked**: the unchanged installed-helper suite
+  ran 12 tests in 51.141 seconds; eight harness tests passed, all four physical
+  tests failed at native-helper scan with `timeout`. Identity handshake,
+  choice/state, commands, all 84 animations/pairs, and reconnect were not
+  reached. Host Bluetooth is on; the timeout reproduced with the app closed
+  and a persistent USB session confirming advertising before and after scan.
+  The immediate scan blocker was later localized to incomplete macOS Bluetooth
+  privacy authorization; on-air discovery remained unmeasured at this stage.
+- App-driven Bluetooth selection, remembered-device behavior, visual playback,
+  and the separate physical power/restart matrix remain pending. Full raw
+  redacted evidence and diagnosis are in the ignored plan's
+  `task-8-report.md`. Taby.app is left closed and the board's saved transport
+  is Bluetooth. `.vscode/` was not touched.
+
+### Bluetooth discovery diagnosis and UUID correction
+
+- macOS unified logs localized the command-line helper scan timeout before radio
+  discovery: those runs were attributed to `com.openai.codex` and reached a
+  pending Bluetooth privacy prompt with no completed authorization before the
+  native helper's 12-second timeout. Static firmware and native-helper audits
+  found matching advertised service UUIDs and compatible candidate-name
+  normalization, so no advertising-name change was justified.
+- Found a separate compiled GATT defect: the identity characteristic initializer
+  contained only 15 bytes, producing
+  `00544142-5900-0040-00a0-000000000007` instead of
+  `54414259-0000-4000-a000-000000000007`. Added a compiled-byte regression test
+  for all service/characteristic UUIDs `0001` through `0007`, fixed the missing
+  zero byte, ran 123 host tests (118 passed, five expected skips), and received
+  a clean independent review. Commit: `1803bef`.
+- Rebuilt and packaged the corrected `amoled-1.64-v2` image; bundle inspection
+  passed and still excludes NVS/factory identity writes. The first reflash
+  attempt failed before connecting or writing any flash data, and both the
+  standard and USB-reset connection paths then received no serial data. The
+  previously installed firmware remains intact. A physical board reset or
+  USB power cycle is required before the corrected image can be flashed.
+- Bluetooth access toggles for ChatGPT/Codex and the signed Taby app are now
+  visibly enabled on the personal Mac. No credential was captured or stored.
+  The helper suite was not rerun because the board no longer answered serial
+  commands, so hardware BLE acceptance remains pending.
+
+### 2026-10-20 Bluetooth PR handoff
+
+- At the owner's request, prepared `feature/bluetooth-first` as a draft pull
+  request into the personal fork's `main` for office-device testing. GitHub
+  Actions remain disabled and no workflow was added.
+- The corrected `1803bef` V2 build and package completed and passed inspection,
+  but it was not flashed. The connection attempts failed before the bootloader
+  accepted a connection or any flash bytes were written; the earlier reviewed
+  image remains on the personal test board.
+- Physical BLE discovery/handshake, the 84-animation visual sweep, app restart,
+  power/battery/cable recovery, USB recovery, and work-Mac handoff remain
+  acceptance gates for the office test. The PR is not a released or
+  hardware-accepted firmware build.
+- The pre-PR verification gate passed on 2026-10-20: `tools/check.py` verified
+  all assets, partitions, and board metadata; the complete host suite ran 123
+  tests with 118 passes and five expected hardware/Pillow skips; and ESP-IDF
+  builds succeeded for `amoled-1.64`, `amoled-1.64-v2`, and `round-1.32`.

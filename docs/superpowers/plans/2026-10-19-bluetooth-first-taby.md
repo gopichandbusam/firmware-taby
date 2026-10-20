@@ -12,7 +12,9 @@
 
 ## Global Constraints
 
-- Work directly on personal `main`; use small commits and do not create a feature branch, pull request, or GitHub Actions workflow.
+- Deliver this candidate through the short-lived `feature/bluetooth-first` draft
+  pull request requested by the owner on 2026-10-20. Do not add a GitHub Actions
+  workflow; local verification remains authoritative.
 - Preserve the existing UUIDs `0001`-`0005`, USB commands, reply shapes, board pins, partitions, and asset packs.
 - Add choice on UUID suffix `0006` and identity on `0007`; do not reverse them.
 - Map `choice_1` to `left`, `choice_2` to `right`, `none` to `none`, and legacy one-button `action` to `left`.
@@ -47,7 +49,7 @@
 - Create: `tests/test_ble_v2.py`
 - Modify: `firmware/main/CMakeLists.txt`
 
-- [ ] **Step 1: Write the failing host tests**
+- [x] **Step 1: Write the failing host tests**
 
   Add a sanitizer-built driver following `tests/host/protocol_driver.c`. Assert:
 
@@ -68,7 +70,7 @@
 
   Expected: FAIL because the module does not exist.
 
-- [ ] **Step 2: Add the smallest pure interface**
+- [x] **Step 2: Add the smallest pure interface**
 
   Declare:
 
@@ -92,7 +94,7 @@
 
   Keep this module independent of NimBLE, FreeRTOS, NVS, and `cJSON`. Use bounded formatting and explicit length/result checks. Add the source to `firmware/main/CMakeLists.txt`.
 
-- [ ] **Step 3: Make the focused tests pass**
+- [x] **Step 3: Make the focused tests pass**
 
   Run:
 
@@ -102,7 +104,7 @@
 
   Expected: PASS, including sanitizer execution when the host compiler supports it.
 
-- [ ] **Step 4: Self-review and commit**
+- [x] **Step 4: Self-review and commit**
 
   Check that invalid input cannot produce an app-valid identity, no secret-bearing type enters the module, and `ACTION` maps to `left`.
 
@@ -121,7 +123,7 @@
 - Modify: `firmware/main/taby_usb_serial.c`
 - Modify: `tests/test_bluetooth_contract.py` (create if Task 1 used only `test_ble_v2.py`)
 
-- [ ] **Step 1: Add failing structural contract tests**
+- [x] **Step 1: Add failing structural contract tests**
 
   Test that the firmware source/build contract contains:
 
@@ -132,23 +134,23 @@
 
   Run the new focused test and confirm it fails before editing production code.
 
-- [ ] **Step 2: Implement the identity read**
+- [x] **Step 2: Implement the identity read**
 
   Add an identity value handle and read callback. On `taby_ble_transport_init(identity)`, build a private bounded identity payload from `identity->device_id` and `taby_firmware_version()`. Refuse protocol-2 availability and set a clear internal error if it cannot be formatted. The callback must accept only `BLE_GATT_ACCESS_OP_READ_CHR` and append the full prepared payload once.
 
-- [ ] **Step 3: Implement the choice read**
+- [x] **Step 3: Implement the choice read**
 
   Add a choice value handle and read callback. Each read takes a fresh atomic snapshot through `taby_reusable_ui_read_choice_signal()`, formats it through the pure v2 module, does not consume/reset the signal, and appends one complete JSON payload.
 
-- [ ] **Step 4: Register `0006` and `0007` without changing older characteristics**
+- [x] **Step 4: Register `0006` and `0007` without changing older characteristics**
 
   Put choice then identity after power in `k_gatt_services`, both with `BLE_GATT_CHR_F_READ`. Reset their handles and cached payload state on shutdown. Preserve the existing advertised name unless the installed helper black-box test proves it incompatible.
 
-- [ ] **Step 5: Advertise the USB capability only for a usable identity**
+- [x] **Step 5: Advertise the USB capability only for a usable identity**
 
   In `add_usb_capabilities()`, call `taby_identity_get()` and add `bluetooth_v2` only when `taby_ble_v2_identity_available(identity->device_id, taby_firmware_version())` returns true. Do not require BLE to be currently initialized; a USB-default device must announce that it can switch.
 
-- [ ] **Step 6: Run focused and existing protocol tests**
+- [x] **Step 6: Run focused and existing protocol tests**
 
   ```sh
   .venv/bin/python -m unittest tests.test_ble_v2 tests.test_bluetooth_contract tests.test_protocol tests.test_device -v
@@ -156,7 +158,7 @@
 
   Expected: PASS.
 
-- [ ] **Step 7: Self-review and commit**
+- [x] **Step 7: Self-review and commit**
 
   Confirm the identity payload has no secret/claim/Wi-Fi fields and the capability cannot be reported for an invalid identity.
 
@@ -172,19 +174,19 @@
 
 - Modify: `tests/test_protocol.py`
 
-- [ ] **Step 1: Add a manifest-driven BLE reply test**
+- [x] **Step 1: Add a manifest-driven BLE reply test**
 
   For every animation in each board catalog, run the real shared handler with `prefix=""` and `echo=False`. Require `result == "applied"`, `animation_id == input`, and reply `OK ANIMATION`. Explicitly reject any response containing `unsupported_animation`.
 
-- [ ] **Step 2: Add inferred intro-to-loop coverage**
+- [x] **Step 2: Add inferred intro-to-loop coverage**
 
   Generate pairs at test time where a catalog ID ending in `_in` has a matching `_loop`. Send `intro>loop` through the BLE handler seam and require both IDs in the resolved command. Do not hard-code a second animation inventory.
 
-- [ ] **Step 3: Keep rejection nonfatal**
+- [x] **Step 3: Keep rejection nonfatal**
 
   Send an absent ID such as `dizzy_loop`, assert the existing successful `OK ... unsupported_animation` compatibility response, then send `confirmation` on the same driver session and require it to apply.
 
-- [ ] **Step 4: Run and commit**
+- [x] **Step 4: Run and commit**
 
   ```sh
   .venv/bin/python -m unittest tests.test_protocol -v
@@ -203,11 +205,11 @@
 - Create: `tests/host/transport_prefs_driver.c`
 - Create: `tests/test_transport_prefs.py`
 
-- [ ] **Step 1: Write a fake-NVS failure matrix against the real prefs source**
+- [x] **Step 1: Write a fake-NVS failure matrix against the real prefs source**
 
   Compile `taby_transport_prefs.c` off-device with fake NVS functions. Cover blank storage, complete USB, complete Bluetooth, incomplete/pending values, out-of-range preference, and failures at open, first set, second set, and commit. Simulate reboot by discarding RAM state and loading the fake persisted bytes again.
 
-- [ ] **Step 2: State the required invariant in tests**
+- [x] **Step 2: State the required invariant in tests**
 
   Require:
 
@@ -223,15 +225,15 @@
   .venv/bin/python -m unittest tests.test_transport_prefs -v
   ```
 
-- [ ] **Step 3: Persist candidates before publishing RAM state**
+- [x] **Step 3: Persist candidates before publishing RAM state**
 
   Replace `persist_state()` with a helper that accepts candidate values. Open NVS, set both candidate bytes, commit, close on every path, and only then assign `s_state.preferred_mode` and `s_state.onboarding_complete`. Keep the existing namespace and keys unchanged.
 
-- [ ] **Step 4: Normalize inconsistent loaded pairs**
+- [x] **Step 4: Normalize inconsistent loaded pairs**
 
   Validate the loaded complete/preference combination without adding a migration. Let the existing factory USB-default path handle a normalized unknown first-run state. Preserve the current pending-Wi-Fi semantics.
 
-- [ ] **Step 5: Run and commit**
+- [x] **Step 5: Run and commit**
 
   ```sh
   .venv/bin/python -m unittest tests.test_transport_prefs -v
@@ -250,7 +252,7 @@
 - Modify: `tests/test_bluetooth_lifecycle.py`
 - Create: `tests/host/bluetooth_lifecycle_driver.c` only if a pure transition seam is needed
 
-- [ ] **Step 1: Add failing policy/order tests**
+- [x] **Step 1: Add failing policy/order tests**
 
   Cover these cases with the smallest host seam or source/build test that exercises behavior rather than duplicated constants:
 
@@ -262,23 +264,23 @@
   - `MODE usb` intentionally shuts BLE down without changing the durable default;
   - `DEFAULT usb` commits USB first, then shuts BLE down, so interruption boots USB.
 
-- [ ] **Step 2: Tighten the boot condition**
+- [x] **Step 2: Tighten the boot condition**
 
   In `app_main.c`, start BLE only when `preferred_transport == TABY_TRANSPORT_PREF_BLUETOOTH` after validated preference loading. Keep USB initialization before BLE and preserve the factory USB shipping default.
 
-- [ ] **Step 3: Enforce handoff ordering**
+- [x] **Step 3: Enforce handoff ordering**
 
   In `taby_onboarding_activate_transport_mode()` and `taby_onboarding_set_transport_default()`, implement the tested order. Never send a success reply until the relevant operation has completed. On Bluetooth preference commit failure, the current temporary BLE session may remain recoverable, but the durable/INFO state must remain the old value.
 
-- [ ] **Step 4: Guard intentional BLE shutdown**
+- [x] **Step 4: Guard intentional BLE shutdown**
 
   Add a desired-active/shutting-down guard. Ordinary disconnect and advertising-complete events re-advertise while desired-active. A disconnect triggered by `taby_ble_transport_shutdown()` must not restart advertising. Keep init/shutdown idempotent.
 
-- [ ] **Step 5: Retry transient advertising failures without blocking USB/display**
+- [x] **Step 5: Retry transient advertising failures without blocking USB/display**
 
   Add a bounded one-shot retry/backoff for `ble_gap_adv_start()` failures while BLE remains desired-active and NimBLE is synced. Cancel it on successful advertising or intentional shutdown. A fatal NimBLE initialization failure remains visible through `bluetooth_error` and must leave USB/display usable.
 
-- [ ] **Step 6: Run and commit**
+- [x] **Step 6: Run and commit**
 
   ```sh
   .venv/bin/python -m unittest tests.test_bluetooth_lifecycle tests.test_transport_prefs tests.test_device -v
@@ -296,27 +298,27 @@
 - Create: `tests/test_ble_v2_helper.py`
 - Create: `tests/hardware/README.md` if no hardware-test instructions file exists
 
-- [ ] **Step 1: Add an opt-in JSON-lines helper harness**
+- [x] **Step 1: Add an opt-in JSON-lines helper harness**
 
   Skip unless `TABY_BLE_HARDWARE=1`. Default to `/Applications/Taby.app/Contents/Resources/native/taby-bluetooth-probe`, spawn it as a subprocess, match replies by request ID, enforce timeouts, and terminate it cleanly in teardown.
 
-- [ ] **Step 2: Test discovery and identity**
+- [x] **Step 2: Test discovery and identity**
 
   Exercise `scan`, `connect`, `state`, and `choice`. Require protocol 2, firmware version, and the same stable device ID captured from USB. Require choice to contain exactly `signal` and `choice` with an allowed choice value.
 
-- [ ] **Step 3: Test commands and connection retention**
+- [x] **Step 3: Test commands and connection retention**
 
   Send `confirmation`, a card, a timer, `DISPLAY_ORIENTATION?`, an unsupported animation, and another valid animation without reconnecting. Require expected acknowledgements and no helper crash/timeout.
 
-- [ ] **Step 4: Test a fresh-helper reconnect**
+- [x] **Step 4: Test a fresh-helper reconnect**
 
   Connect and capture the peripheral/device identity, close the helper, wait for re-advertising, launch a new helper, reconnect to the remembered peripheral, and send another command. Require the same device ID.
 
-- [ ] **Step 5: Add the real-board animation sweep**
+- [x] **Step 5: Add the real-board animation sweep**
 
   Load all 84 IDs from `assets/amoled-1.64/manifest.json`/catalog at runtime. Send each over the native helper, fail with the exact ID on timeout/rejection/`unsupported_animation`, and periodically read state to detect a silently lost link. Also send every inferred `*_in>*_loop` pair.
 
-- [ ] **Step 6: Validate skip behavior off-hardware and commit**
+- [x] **Step 6: Validate skip behavior off-hardware and commit**
 
   ```sh
   .venv/bin/python -m unittest tests.test_ble_v2_helper -v
@@ -333,7 +335,7 @@
 
 - Modify only if a failing check reveals a real implementation defect.
 
-- [ ] **Step 1: Run repository checks and all host tests**
+- [x] **Step 1: Run repository checks and all host tests**
 
   ```sh
   .venv/bin/python tools/check.py
@@ -342,7 +344,7 @@
 
   Expected: all required checks pass; hardware tests skip without the opt-in environment variable.
 
-- [ ] **Step 2: Build all shared-code targets cleanly**
+- [x] **Step 2: Build all shared-code targets cleanly**
 
   ```sh
   source work/esp-idf-v5.4.2/export.sh
@@ -353,7 +355,7 @@
 
   Expected: all three ESP-IDF builds succeed. Do not weaken warnings or remove older board support to make a build pass.
 
-- [ ] **Step 3: Review the complete diff**
+- [x] **Step 3: Review the complete diff**
 
   ```sh
   git status --short
@@ -398,7 +400,8 @@
   Close the app so it does not own the single BLE slot, then run:
 
   ```sh
-  TABY_BLE_HARDWARE=1 .venv/bin/python -m unittest tests.test_ble_v2_helper -v
+  TABY_BLE_HARDWARE=1 TABY_USB_DEVICE_ID="$TABY_DEVICE_ID" \
+    .venv/bin/python -m unittest tests.test_ble_v2_helper -v
   ```
 
   Expected: discovery, protocol-2 handshake, choice/state, reconnect, all 84 IDs, and inferred sequences pass.
@@ -438,7 +441,7 @@
 
   Send `TRANSPORT_DEFAULT usb`, reboot, confirm BLE does not advertise and USB still accepts commands/flashing, then restore Bluetooth default through the app and reboot once more.
 
-## Task 10: Finish documentation, history, and personal-main delivery
+## Task 10: Finish documentation, history, and draft-PR delivery
 
 **Files:**
 
@@ -449,19 +452,19 @@
 - Modify: `docs/superpowers/specs/2026-10-19-bluetooth-first-taby-design.md`
 - Modify: `docs/superpowers/plans/2026-10-19-bluetooth-first-taby.md`
 
-- [ ] **Step 1: Document supported Bluetooth behavior and limits**
+- [x] **Step 1: Document supported Bluetooth behavior and limits**
 
   Explain one-time USB enablement, remembered app pairing, automatic boot/reconnect, recovery back to USB, one active Mac, features supported over BLE, features still USB-only, and the unbonded personal-test security limitation.
 
-- [ ] **Step 2: Record exact verification evidence**
+- [x] **Step 2: Record exact verification evidence**
 
   In `log.md`, record commands/results, app version, firmware commit, build targets, hardware tests, redacted device suffix, and any pending work-Mac or visual checks. In `memory.md`, replace the proposed/pending state with the actual current state and continuation instructions. Never add credentials or a full device identity.
 
-- [ ] **Step 3: Mark the plan accurately**
+- [x] **Step 3: Mark the plan accurately**
 
   Check off only completed steps. Do not label the feature complete if the screen sweep, lifecycle cases, or work-Mac acceptance remain pending.
 
-- [ ] **Step 4: Run the final verification gate again**
+- [x] **Step 4: Run the final verification gate again**
 
   ```sh
   .venv/bin/python tools/check.py
@@ -474,15 +477,18 @@
   git status --short
   ```
 
-- [ ] **Step 5: Commit and push personal `main`**
+- [ ] **Step 5: Commit, push the feature branch, and open a draft PR**
 
   ```sh
   git add README.md firmware/README.md memory.md log.md docs/superpowers/specs/2026-10-19-bluetooth-first-taby-design.md docs/superpowers/plans/2026-10-19-bluetooth-first-taby.md
   git commit -m "docs: document bluetooth-first Taby"
-  git push origin main
+  git push -u origin feature/bluetooth-first
+  gh pr create --draft --base main --head feature/bluetooth-first
   ```
 
-  Confirm `origin/main` points at the tested commit, `upstream` remains the official repository, no workflow file was added, and no build artifacts or secrets are tracked.
+  Confirm the draft PR targets personal `main`, `upstream` remains the official
+  repository, no workflow file was added, and no build artifacts or secrets are
+  tracked. Merge only after the office-device acceptance gates are recorded.
 
 ## Definition of Done
 
@@ -495,4 +501,6 @@
 - USB recovery and reflashing remain functional.
 - Personal and work Macs can use the same board one at a time; if the work Mac is unavailable, that single acceptance item is explicitly pending.
 - Host tests, repository checks, all three firmware builds, flashed-board helper tests, and physical display checks are recorded truthfully.
-- Documentation, `memory.md`, and `log.md` describe the shipped state; tested commits are pushed directly to personal `main` with no GitHub Actions.
+- Documentation, `memory.md`, and `log.md` describe the candidate state; tested
+  commits are pushed to a draft pull request for personal `main` with no GitHub
+  Actions, and merge waits for the remaining hardware acceptance.

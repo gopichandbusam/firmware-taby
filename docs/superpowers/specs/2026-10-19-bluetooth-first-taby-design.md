@@ -1,5 +1,10 @@
 # Bluetooth-first Physical Taby design
 
+> **Implementation status (2026-10-20):** Implemented as a host-verified pull
+> request candidate. Physical BLE acceptance remains pending. The identity
+> characteristic UUID was corrected in `1803bef`; that corrected image has not
+> yet been flashed.
+
 Status: Approved by owner on 2026-10-19
 
 Date: 2026-10-19

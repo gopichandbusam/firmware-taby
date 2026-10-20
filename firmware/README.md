@@ -121,16 +121,46 @@ INFO/DIAG output, Wi-Fi credentials, or personal device logs in issues.
 
 ### Bluetooth and local Wi-Fi
 
-Select Bluetooth on the device to use its BLE GATT service:
-`54414259-0000-4000-a000-000000000001`. Write a short UTF-8 animation or `UI/...`
-command as one characteristic value (without the USB newline) to the
-characteristic ending in `0002`; subscribe to events on `0003` before writing.
-`0004` is readable state, and `0005` is readable power information. The firmware
-supports one controller at a time and does not use BLE bonding. BLE event payloads
-use their own `READY`/`OK`/`ERR` messages rather than USB's `TABY:` prefix; an
-animation the board lacks is a successful write answered
-`OK <STATE> unsupported_animation <ID>`.
-For payload details and limits, see `main/taby_ble_transport.c`.
+Use USB once to install/update the firmware, discover the stable device identity,
+and select Bluetooth as both the active and default transport. A successful
+default selection is committed before it is acknowledged; subsequent resets and
+repower start the saved Bluetooth mode automatically. USB stays initialized for
+diagnosis, returning to USB mode, and reflashing.
+
+Taby for macOS 1.0.13 offers this handoff only when USB `INFO` advertises
+`bluetooth_v2`. The app remembers the CoreBluetooth peripheral identifier plus
+the stable Taby device ID. This is app-level remembered selection, not macOS
+bonding or passkey pairing. Give the signed Taby app Bluetooth privacy access on
+each Mac, and use only one controlling Mac at a time.
+
+`bluetooth_v2` is advertised only when the firmware can produce a valid stable
+identity. On boot, BLE starts only for a completed persisted Bluetooth default.
+An ordinary disconnect re-advertises; an intentional switch to USB stops BLE.
+
+The BLE GATT service is `54414259-0000-4000-a000-000000000001`:
+
+| Suffix | Access | Value |
+| --- | --- | --- |
+| `0002` | Write | One short UTF-8 animation, `UI/...`, timer, clear, brightness, orientation, or other shared display command; omit USB's trailing newline |
+| `0003` | Notify | `READY`/`OK`/`ERR` event payloads |
+| `0004` | Read | Current presentation state |
+| `0005` | Read | Power information |
+| `0006` | Read | Choice JSON with `signal` and `choice` |
+| `0007` | Read | Protocol-2 identity JSON with `protocol`, `deviceId`, and `firmwareVersion` |
+
+Subscribe to `0003` before writing `0002`. All display commands use the same
+parser/runtime as USB, so shipped animations and intro/loop pairs, cards, timers,
+clear/idle, choices, and supported orientation commands do not have a separate
+BLE allowlist. An unavailable animation is still a successful compatibility
+reply: `OK <STATE> unsupported_animation <ID>`. For payload limits and lifecycle
+details, see `main/taby_ble_transport.c`.
+
+This branch is an unbonded personal compatibility build. It supports one BLE
+controller, exposes no factory secret or Wi-Fi credential, and must not be
+treated as an authenticated public control channel. Public/upstream release
+requires security and API-contract review. The corrected protocol-2 image has
+passed host tests and all target builds, but physical BLE, animation, restart,
+power-loss, battery, cable-removal, and second-Mac acceptance remain pending.
 
 After explicitly setting up Wi-Fi on the device, local HTTP supports `GET /ping`,
 `GET /state`, `GET /touch`, `GET /v1/reusable/choice-signal`, and

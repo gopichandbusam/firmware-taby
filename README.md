@@ -159,6 +159,16 @@ Humans and AI agents contribute through the same pull-request workflow.
 
 [Work on firmware](firmware/README.md) · [Contribute a print](hardware/README.md#for-agents-and-contributors) · [Add a board](firmware/README.md#add-a-board)
 
+The `feature/bluetooth-first` development branch adds the BLE protocol used by
+Taby for macOS 1.0.13, including remembered device identity, display commands,
+choices, and reconnect handling. It is a personal compatibility build under
+review, not a released hardware-validated build: the corrected image still
+needs flashing and physical animation/lifecycle acceptance on the Waveshare
+1.64-inch V1.1/V2 board. See the
+[firmware guide](firmware/README.md#bluetooth-and-local-wi-fi) and
+[office hardware-test instructions](tests/hardware/README.md) for setup and
+limitations.
+
 <details>
 <summary><strong>Contributor notes & repository map</strong></summary>
 
