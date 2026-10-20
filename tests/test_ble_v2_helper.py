@@ -35,6 +35,24 @@ for line in sys.stdin:
                           "result": {"op": op, "command": request.get("command")}}), flush=True)
 '''
 
+FAKE_RE_ADVERTISING_HELPER = r'''
+import json
+import sys
+
+scans = 0
+for line in sys.stdin:
+    request = json.loads(line)
+    if request["op"] == "scan":
+        scans += 1
+        result = ([{"peripheralId": "peripheral-A", "name": "Taby"}]
+                  if sys.argv[1] == "delayed" and scans >= 3 else [])
+    elif request["op"] == "connect":
+        result = {"protocol": 2, "deviceId": "taby-usb-1", "firmwareVersion": "1.2.3"}
+    else:
+        raise AssertionError(request)
+    print(json.dumps({"id": request["id"], "ok": True, "result": result}), flush=True)
+'''
+
 
 class HelperProtocolError(AssertionError):
     """The helper emitted a malformed or mismatched JSON-lines reply."""
@@ -61,7 +79,7 @@ class HelperProcess:
     def __exit__(self, *_):
         self.close()
 
-    def request(self, op, **fields):
+    def request(self, op, *, timeout=None, **fields):
         self.next_id += 1
         request_id = self.next_id
         payload = json.dumps({"id": request_id, "op": op, **fields}, separators=(",", ":"))
@@ -71,7 +89,7 @@ class HelperProcess:
         except (BrokenPipeError, OSError) as exc:
             raise HelperProtocolError(f"{op}: helper exited before request {request_id}") from exc
 
-        deadline = time.monotonic() + self.timeout
+        deadline = time.monotonic() + (self.timeout if timeout is None else timeout)
         while b"\n" not in self.buffer:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -147,6 +165,35 @@ def send_animation(helper, animation_id):
     return result
 
 
+def wait_for_re_advertising(helper, peripheral_id, timeout=35.0, poll_interval=0.25):
+    """Observe the remembered peripheral in a fresh helper's scan results."""
+    deadline = time.monotonic() + timeout
+    scans = 0
+    last_seen = []
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            seen = ", ".join(last_seen) if last_seen else "none"
+            raise TimeoutError(f"{peripheral_id} did not re-advertise after {scans} scans; "
+                               f"last seen: {seen}")
+        try:
+            candidates = helper.request("scan", timeout=remaining)
+        except TimeoutError as exc:
+            raise TimeoutError(f"{peripheral_id} did not re-advertise after {scans} scans; "
+                               "final scan timed out") from exc
+        scans += 1
+        if not isinstance(candidates, list):
+            raise HelperProtocolError(f"scan returned non-list while waiting for {peripheral_id}")
+        last_seen = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict) or set(candidate) != {"peripheralId", "name"}:
+                raise HelperProtocolError(f"scan returned invalid candidate while waiting for {peripheral_id}")
+            last_seen.append(candidate["peripheralId"])
+            if candidate == {"peripheralId": peripheral_id, "name": "Taby"}:
+                return candidate
+        time.sleep(min(poll_interval, max(0.0, deadline - time.monotonic())))
+
+
 class HelperHarnessTests(unittest.TestCase):
     def test_requests_have_unique_ids_and_receive_their_own_replies(self):
         with HelperProcess([sys.executable, "-u", "-c", FAKE_HELPER]) as helper:
@@ -185,6 +232,23 @@ class HelperHarnessTests(unittest.TestCase):
         with HelperProcess([sys.executable, "-u", "-c", FAKE_HELPER]) as helper:
             with self.assertRaisesRegex(AssertionError, "taby_response_ready_in"):
                 send_animation(helper, "taby_response_ready_in")
+
+    def test_wait_for_readvertising_scans_until_same_peripheral_returns(self):
+        with HelperProcess([sys.executable, "-u", "-c", FAKE_RE_ADVERTISING_HELPER,
+                            "delayed"]) as helper:
+            candidate = wait_for_re_advertising(helper, "peripheral-A", timeout=1,
+                                                poll_interval=0.01)
+            self.assertEqual(candidate, {"peripheralId": "peripheral-A", "name": "Taby"})
+            self.assertEqual(helper.request("connect", peripheralId=candidate["peripheralId"]),
+                             {"protocol": 2, "deviceId": "taby-usb-1",
+                              "firmwareVersion": "1.2.3"})
+
+    def test_wait_for_readvertising_times_out_with_peripheral_and_scan_count(self):
+        with HelperProcess([sys.executable, "-u", "-c", FAKE_RE_ADVERTISING_HELPER,
+                            "never"]) as helper:
+            with self.assertRaisesRegex(TimeoutError, r"peripheral-A.*scans"):
+                wait_for_re_advertising(helper, "peripheral-A", timeout=0.15,
+                                        poll_interval=0.01)
 
 
 @unittest.skipUnless(os.environ.get("TABY_BLE_HARDWARE") == "1",
@@ -273,18 +337,9 @@ class InstalledHelperHardwareTests(unittest.TestCase):
     def test_fresh_helper_reconnects_to_remembered_peripheral(self):
         peripheral_id = self.connect()
         self.helper.close()
-        time.sleep(2)
         fresh = self.start_helper()
-        deadline = time.monotonic() + 35
-        while True:
-            try:
-                self.assert_identity(fresh.request("connect", peripheralId=peripheral_id))
-                break
-            except HelperRejected as exc:
-                if time.monotonic() >= deadline or not any(
-                    code in str(exc) for code in ("device_not_found", "connect_link_failed")):
-                    raise
-                time.sleep(2)
+        wait_for_re_advertising(fresh, peripheral_id)
+        self.assert_identity(fresh.request("connect", peripheralId=peripheral_id))
         self.assert_link(fresh)
         fresh.request("send", command="confirmation")
         self.assert_link(fresh)
