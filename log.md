@@ -328,3 +328,14 @@ alone does not prove that the display or artwork is correct.
   `https://github.com/gopichandbusam/firmware-taby/pull/2`, with the
   `blast-radius: medium` and `enhancement` labels. Merge remains gated on the
   office-device checks above.
+- Expanded the PR handoff to cover every preserved target: original
+  `amoled-1.64` V1, newer `amoled-1.64-v2` V1.1/V2, and original
+  `round-1.32`. Clean packages for all three were generated from `43878ff`,
+  inspected successfully, and each contained exactly five reviewed images with
+  `source_dirty: false` and no NVS/factory identity writes. Generated bundles
+  remain ignored and were not committed.
+- Added the board/firmware matrix, historical v1.0.8-v1.2.0 release links,
+  all-target build/package/inspect instructions, flash/verify routing, and
+  consistent target guides. The Bluetooth candidate still reports `1.2.0`, so
+  office testing must match `source_commit`; publication waits for a distinct
+  release version and hardware acceptance.

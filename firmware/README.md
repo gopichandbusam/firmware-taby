@@ -5,6 +5,19 @@ development. Start at [INSTALL.md](../INSTALL.md) to install a prebuilt release.
 
 ## Build from source
 
+### Included firmware matrix
+
+| Target | Board revision | Flash | Display assets | Notes |
+| --- | --- | --- | --- | --- |
+| `amoled-1.64` | Waveshare 1.64 V1 | 16 MB | `assets/amoled-1.64` | Original target; LCD_CS GPIO9 |
+| `amoled-1.64-v2` | Waveshare 1.64 V1.1/V2 | 16 MB | aliases `assets/amoled-1.64` | New target; LCD_CS GPIO46 |
+| `round-1.32` | Waveshare 1.32 original | 8 MB | `assets/round-1.32` | Original round target |
+
+The Bluetooth-first shared firmware compiles for all three targets. Host and
+build validation does not substitute for physical testing on each board. The
+current office acceptance is specifically for `amoled-1.64-v2`; do not infer
+physical Bluetooth or display acceptance for the two original targets.
+
 Install **ESP-IDF v5.4.2** using
 [Espressif's setup guide](https://docs.espressif.com/projects/esp-idf/en/v5.4.2/esp32s3/get-started/index.html).
 Use the installer on Windows or Espressif's install/export scripts on macOS/Linux.
@@ -20,6 +33,47 @@ python tools/build.py amoled-1.64
 python tools/build.py amoled-1.64-v2
 python tools/build.py round-1.32
 ```
+
+### Build and package every included target
+
+Run the following in an ESP-IDF v5.4.2 terminal from a clean checkout of the
+exact commit you intend to test:
+
+```sh
+python tools/check.py
+python -m unittest discover -s tests -v
+python tools/build.py amoled-1.64
+python tools/build.py amoled-1.64-v2
+python tools/build.py round-1.32
+python tools/package_release.py amoled-1.64 --output dist
+python tools/package_release.py amoled-1.64-v2 --output dist
+python tools/package_release.py round-1.32 --output dist
+```
+
+Expected archives and checksums:
+
+```text
+dist/taby-amoled-1.64.zip
+dist/taby-amoled-1.64.zip.sha256
+dist/taby-amoled-1.64-v2.zip
+dist/taby-amoled-1.64-v2.zip.sha256
+dist/taby-round-1.32.zip
+dist/taby-round-1.32.zip.sha256
+```
+
+Inspect each extracted bundle before flashing:
+
+```sh
+.venv/bin/python tools/install.py inspect --board amoled-1.64 --bundle dist/taby-amoled-1.64
+.venv/bin/python tools/install.py inspect --board amoled-1.64-v2 --bundle dist/taby-amoled-1.64-v2
+.venv/bin/python tools/install.py inspect --board round-1.32 --bundle dist/taby-round-1.32
+```
+
+Each manifest must name the selected board and tested commit, report
+`source_dirty: false`, contain exactly the reviewed five flash images, and omit
+NVS/factory identity. Build directories, `dist/`, and `work/` are intentionally
+ignored; do not commit generated binaries to the pull request. Publish them as
+release assets only after the matching hardware acceptance is recorded.
 
 Each board gets its own `firmware/build-BOARD` and `firmware/sdkconfig.BOARD`.
 No Node, app repository, private service, factory registry, or editing software
@@ -168,7 +222,7 @@ After explicitly setting up Wi-Fi on the device, local HTTP supports `GET /ping`
 when using a `UI/...` command. These inherited local endpoints have no request
 authentication; use them only on a trusted local network, never by exposing the
 device to the Internet. See `main/taby_http_server.c` for the implementation.
-USB remains the firmware-install route for both boards.
+USB remains the firmware-install route for all three targets.
 
 Custom integrations, including MCP servers, are maintained by their authors.
 The supported first-party integration is in the Taby app.

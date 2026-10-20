@@ -99,6 +99,14 @@ computer or improve the project later.
 - Draft PR #2 is the office-test handoff:
   `https://github.com/gopichandbusam/firmware-taby/pull/2`. Do not merge it until
   the pending physical checks are recorded.
+- The repository and PR preserve all three current board targets and the old
+  v1.0.8, v1.1.0, and v1.2.0 tags. Upstream historical downloads exist for the
+  original 1.64 V1 and round boards; there is no historical V2 bundle.
+- Clean candidate bundles for original 1.64 V1, newer 1.64 V1.1/V2, and round
+  1.32 were packaged and inspected from `43878ff`. They are ignored local test
+  artifacts, not files committed to the PR. The candidate still reports
+  firmware `1.2.0`, so match its manifest commit during office testing and
+  choose a distinct version before publishing binaries.
 - "Paired" for this personal compatibility build means Taby.app remembers the
   CoreBluetooth peripheral ID plus the stable device ID; Taby 1.0.13 does not
   perform OS-level BLE bonding/passkey pairing. The board cannot operate while
