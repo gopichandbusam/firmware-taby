@@ -324,3 +324,7 @@ alone does not prove that the display or artwork is correct.
   all assets, partitions, and board metadata; the complete host suite ran 123
   tests with 118 passes and five expected hardware/Pillow skips; and ESP-IDF
   builds succeeded for `amoled-1.64`, `amoled-1.64-v2`, and `round-1.32`.
+- Pushed `feature/bluetooth-first` and opened draft personal-fork PR #2,
+  `https://github.com/gopichandbusam/firmware-taby/pull/2`, with the
+  `blast-radius: medium` and `enhancement` labels. Merge remains gated on the
+  office-device checks above.

@@ -96,6 +96,9 @@ computer or improve the project later.
   123 host tests (118 passed, five expected skips), and ESP-IDF builds for all
   three targets. These results verify source/build compatibility, not physical
   BLE or visible display behavior.
+- Draft PR #2 is the office-test handoff:
+  `https://github.com/gopichandbusam/firmware-taby/pull/2`. Do not merge it until
+  the pending physical checks are recorded.
 - "Paired" for this personal compatibility build means Taby.app remembers the
   CoreBluetooth peripheral ID plus the stable device ID; Taby 1.0.13 does not
   perform OS-level BLE bonding/passkey pairing. The board cannot operate while

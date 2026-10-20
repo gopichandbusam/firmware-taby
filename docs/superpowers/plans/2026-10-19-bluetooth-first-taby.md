@@ -477,7 +477,7 @@
   git status --short
   ```
 
-- [ ] **Step 5: Commit, push the feature branch, and open a draft PR**
+- [x] **Step 5: Commit, push the feature branch, and open a draft PR**
 
   ```sh
   git add README.md firmware/README.md memory.md log.md docs/superpowers/specs/2026-10-19-bluetooth-first-taby-design.md docs/superpowers/plans/2026-10-19-bluetooth-first-taby.md
