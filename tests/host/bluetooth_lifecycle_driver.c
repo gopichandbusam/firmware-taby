@@ -37,8 +37,10 @@ void nvs_close(nvs_handle_t handle) {}
 #define ESP_ERR_INVALID_STATE 0x103
 #define ESP_ERR_NO_MEM 0x101
 #define ESP_ERROR_CHECK(x) assert((x) == ESP_OK)
-#define BLE_UUID128_INIT(...) {0}
-typedef int ble_uuid128_t;
+/* Preserve NimBLE's 16-byte, little-endian UUID initializer semantics. */
+typedef struct { uint8_t type; } ble_uuid_t;
+typedef struct { ble_uuid_t u; uint8_t value[16]; } ble_uuid128_t;
+#define BLE_UUID128_INIT(...) {.u = {.type = 128}, .value = {__VA_ARGS__}}
 typedef void *QueueHandle_t;
 typedef void *TaskHandle_t;
 typedef int taby_ble_command_job_t;
@@ -300,6 +302,23 @@ static void run_race(const char *op) {
 int main(int argc, char **argv) {
     if (argc != 5) return 2;
     const char *op = argv[1]; durable.pref = atoi(argv[2]); durable.done = atoi(argv[3]); failure = argv[4];
+    if (!strcmp(op, "uuids")) {
+        const struct { const char *name; const ble_uuid128_t *uuid; } entries[] = {
+            {"service", &k_taby_service_uuid},
+            {"command", &k_taby_command_characteristic_uuid},
+            {"event", &k_taby_event_characteristic_uuid},
+            {"state", &k_taby_state_characteristic_uuid},
+            {"power", &k_taby_power_characteristic_uuid},
+            {"choice", &k_taby_choice_characteristic_uuid},
+            {"identity", &k_taby_identity_characteristic_uuid},
+        };
+        for (size_t i = 0; i < sizeof(entries) / sizeof(entries[0]); i++) {
+            printf("%s=", entries[i].name);
+            for (int byte = 15; byte >= 0; byte--) printf("%02x", entries[i].uuid->value[byte]);
+            putchar('\n');
+        }
+        return 0;
+    }
     int result = 0;
     if (!strcmp(op, "boot") || !strcmp(op, "factory")) {
         identity.has_factory_data = !strcmp(op, "factory"); app_main();

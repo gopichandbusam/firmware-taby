@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN = ROOT / "firmware/main"
@@ -88,6 +89,23 @@ class BluetoothLifecycleTests(unittest.TestCase):
                 self.assertEqual(result["onboarding"], "1")
                 if expected == "1":
                     self.assertEqual(result["usb_before_ble"], "1")
+
+    def test_uuid_bytes_match_installed_app_protocol(self):
+        # A missing initializer byte shifts the UUID and is silently zero-filled
+        # by C; compare the compiled bytes with the app's independent contract.
+        actual = self.run_case("uuids")
+        expected = {
+            "service": "54414259-0000-4000-a000-000000000001",
+            "command": "54414259-0000-4000-a000-000000000002",
+            "event": "54414259-0000-4000-a000-000000000003",
+            "state": "54414259-0000-4000-a000-000000000004",
+            "power": "54414259-0000-4000-a000-000000000005",
+            "choice": "54414259-0000-4000-a000-000000000006",
+            "identity": "54414259-0000-4000-a000-000000000007",
+        }
+        for role, value in expected.items():
+            with self.subTest(role=role):
+                self.assertEqual(str(uuid.UUID(hex=actual[role])), value)
 
     def test_factory_shipping_default_stays_usb(self):
         result = self.run_case("factory", 0, 0)
