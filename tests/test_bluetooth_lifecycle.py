@@ -50,7 +50,7 @@ class BluetoothLifecycleTests(unittest.TestCase):
                      "taby_ble_transport_is_advertising", "taby_ble_transport_is_connected",
                      "taby_ble_transport_device_name", "taby_ble_transport_last_error"]
         # Retry helpers are selected when present, including their real bodies.
-        functions = re.findall(r"^static (?:void|bool) (advertising_retry_\w+)\(", ble, re.M) + functions
+        functions = re.findall(r"^static (?:void|bool|int) ((?:advertising_(?:retry|state)_\w+|start_advertising_locked|gap_event_handler_locked))\([^;]*?\)\s*\{", ble, re.M) + functions
         bodies = [function(ble, name) for name in functions]
         declarations = [body[:body.index("{")].rstrip() + ";\n" for body in bodies]
         onboarding = (MAIN / "taby_onboarding.c").read_text()
@@ -59,7 +59,7 @@ class BluetoothLifecycleTests(unittest.TestCase):
         app = (MAIN / "app_main.c").read_text()
         bodies += [function(app, name) for name in ["apply_factory_usb_shipping_default_if_needed", "app_main"]]
         (cls.build / "production_lifecycle.h").write_text(globals_text + "\n".join(declarations + bodies))
-        result = subprocess.run([compiler, "-std=gnu11", "-Wall", "-Wextra", "-Werror",
+        result = subprocess.run([compiler, "-std=gnu11", "-pthread", "-Wall", "-Wextra", "-Werror",
                                  "-Wno-unused-function", "-Wno-unused-variable", "-Wno-unused-parameter",
                                  "-g", "-O1", "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                                  f"-I{ROOT / 'tests/host/stubs'}", f"-I{MAIN}", f"-I{cls.build}",
@@ -73,7 +73,7 @@ class BluetoothLifecycleTests(unittest.TestCase):
         shutil.rmtree(cls.build, ignore_errors=True)
 
     def run_case(self, case, pref=1, done=1, failure="none"):
-        result = subprocess.run([str(self.driver), case, str(pref), str(done), failure], capture_output=True, text=True)
+        result = subprocess.run([str(self.driver), case, str(pref), str(done), failure], capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         return dict(field.split("=", 1) for field in result.stdout.strip().split())
 
@@ -194,3 +194,26 @@ class BluetoothLifecycleTests(unittest.TestCase):
         result = self.run_case("boot", 3, failure="init")
         self.assertEqual((result["usb"], result["display"], result["onboarding"], result["ready"]), ("1", "1", "1", "0"))
         self.assertIn("nimble_port_init_", result["error"])
+
+    def test_shutdown_serializes_with_attempt_already_past_desired_guard(self):
+        result = self.run_case("race_shutdown", failure="adv_once")
+        self.assertEqual(result["starts_after_stop_intent"], "0")
+        self.assertEqual((result["ready"], result["advertising"], result["controller_active"], result["pending"]), ("0", "0", "0", "0"))
+
+    def test_host_retry_and_usb_ensure_do_not_start_advertising_twice(self):
+        result = self.run_case("race_retry", failure="adv_once")
+        self.assertEqual((result["adv_calls"], result["duplicates"]), ("2", "0"))
+        self.assertEqual((result["advertising"], result["controller_active"], result["pending"], result["error"]), ("1", "1", "0", "none"))
+
+    def test_usb_ensure_returns_without_waiting_for_inflight_host_retry(self):
+        result = self.run_case("race_ensure", failure="adv_once")
+        self.assertEqual(result["ensure_returned_while_paused"], "1")
+        self.assertEqual((result["adv_calls"], result["duplicates"], result["advertising"]), ("2", "0", "1"))
+
+    def test_delayed_shutdown_gap_callbacks_cannot_restart_advertising(self):
+        result = self.run_case("delayed_shutdown")
+        self.assertEqual((result["adv_calls"], result["advertising"], result["controller_active"], result["ready"]), ("1", "0", "0", "0"))
+
+    def test_already_advertising_response_preserves_true_state_without_retry(self):
+        result = self.run_case("mode_bt", failure="already")
+        self.assertEqual((result["advertising"], result["controller_active"], result["pending"], result["error"]), ("1", "1", "0", "none"))
