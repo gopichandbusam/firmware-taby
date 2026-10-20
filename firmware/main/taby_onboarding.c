@@ -738,6 +738,10 @@ void taby_onboarding_show_transport_banner(taby_transport_pref_t preferred_mode)
 esp_err_t taby_onboarding_activate_transport_mode(taby_transport_pref_t preferred_mode) {
     switch (preferred_mode) {
         case TABY_TRANSPORT_PREF_USB:
+            ESP_RETURN_ON_ERROR(
+                taby_ble_transport_shutdown(),
+                TAG,
+                "stop bluetooth before usb failed");
             taby_onboarding_show_transport_banner(TABY_TRANSPORT_PREF_USB);
             return ESP_OK;
         case TABY_TRANSPORT_PREF_WIFI:
@@ -786,6 +790,10 @@ esp_err_t taby_onboarding_set_transport_default(taby_transport_pref_t preferred_
             taby_onboarding_persist_transport_choice(preferred_mode),
             TAG,
             "persist usb transport choice failed");
+        ESP_RETURN_ON_ERROR(
+            taby_ble_transport_shutdown(),
+            TAG,
+            "stop bluetooth after usb default failed");
         taby_onboarding_show_usb_hint();
         return ESP_OK;
     }
@@ -828,6 +836,9 @@ esp_err_t taby_onboarding_set_transport_default(taby_transport_pref_t preferred_
             taby_ble_transport_init(taby_identity_get()),
             TAG,
             "start bluetooth transport default failed");
+        if (!taby_ble_transport_is_ready()) {
+            return ESP_ERR_INVALID_STATE;
+        }
         ESP_RETURN_ON_ERROR(
             taby_onboarding_persist_transport_choice(TABY_TRANSPORT_PREF_BLUETOOTH),
             TAG,

@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -20,7 +21,7 @@
 #include "host/ble_hs_adv.h"
 #include "host/ble_hs_mbuf.h"
 #include "nimble/nimble_port.h"
-#include "nimble/nimble_port_freertos.h"
+#include "nimble/nimble_npl.h"
 #include "os/os_mbuf.h"
 #include "services/gap/ble_svc_gap.h"
 #include "services/gatt/ble_svc_gatt.h"
@@ -47,6 +48,8 @@ static const char *TAG = "taby_ble_transport";
 #define TABY_BLE_FAST_CONN_ITVL_MAX 24
 #define TABY_BLE_FAST_CONN_LATENCY 0
 #define TABY_BLE_FAST_CONN_SUPERVISION_TIMEOUT 400
+#define TABY_BLE_ADV_RETRY_LIMIT 5
+#define TABY_BLE_ADV_RETRY_INITIAL_MS 100
 
 static const ble_uuid128_t k_taby_service_uuid =
     BLE_UUID128_INIT(0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xA0,
@@ -87,6 +90,11 @@ static bool s_started = false;
 static bool s_advertising = false;
 static bool s_synced = false;
 static bool s_nimble_initialized = false;
+/* Clear before stopping GAP: stop/terminate themselves can deliver callbacks. */
+static atomic_bool s_desired_active = false;
+static struct ble_npl_callout s_advertising_retry;
+static bool s_advertising_retry_initialized = false;
+static unsigned int s_advertising_retry_count = 0;
 static QueueHandle_t s_command_queue = NULL;
 static TaskHandle_t s_command_task_handle = NULL;
 
@@ -272,6 +280,7 @@ static void publish_event_payload(const char *payload, bool notify) {
 }
 
 static void reset_transport_runtime_state(void) {
+    s_desired_active = false;
     s_started = false;
     s_advertising = false;
     s_synced = false;
@@ -652,6 +661,31 @@ static void request_fast_connection_params(uint16_t conn_handle) {
     }
 }
 
+static void advertising_retry_cancel(void) {
+    if (s_advertising_retry_initialized) {
+        ble_npl_callout_stop(&s_advertising_retry);
+    }
+}
+
+static void advertising_retry_fire(struct ble_npl_event *event) {
+    (void)event;
+    /* Runs on the host event queue; start_advertising checks shutdown/sync. */
+    start_advertising();
+}
+
+static void advertising_retry_schedule(void) {
+    if (!s_desired_active || !s_synced || !s_advertising_retry_initialized ||
+        s_advertising_retry_count >= TABY_BLE_ADV_RETRY_LIMIT) {
+        return;
+    }
+    uint32_t delay_ms = TABY_BLE_ADV_RETRY_INITIAL_MS << s_advertising_retry_count++;
+    int rc = ble_npl_callout_reset(
+        &s_advertising_retry, ble_npl_time_ms_to_ticks32(delay_ms));
+    if (rc != 0) {
+        ESP_LOGE(TAG, "advertising retry schedule failed rc=%d", rc);
+    }
+}
+
 static int gap_event_handler(struct ble_gap_event *event, void *arg) {
     (void)arg;
 
@@ -661,6 +695,8 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                 s_connection_handle = event->connect.conn_handle;
                 s_notify_enabled = false;
                 s_advertising = false;
+                advertising_retry_cancel();
+                s_advertising_retry_count = 0;
                 publish_event_payload("READY", false);
                 clear_last_error();
                 ESP_LOGI(TAG, "client connected handle=%u", event->connect.conn_handle);
@@ -670,6 +706,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
                 snprintf(error, sizeof(error), "connect_status_%d", event->connect.status);
                 set_last_error(error);
                 ESP_LOGW(TAG, "connect failed status=%d", event->connect.status);
+                s_advertising = false;
                 start_advertising();
             }
             return 0;
@@ -714,6 +751,10 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
 }
 
 static void start_advertising(void) {
+    if (!s_desired_active || !s_synced ||
+        s_connection_handle != BLE_HS_CONN_HANDLE_NONE || s_advertising) {
+        return;
+    }
     struct ble_hs_adv_fields fields;
     memset(&fields, 0, sizeof(fields));
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
@@ -728,6 +769,7 @@ static void start_advertising(void) {
         set_last_error(error);
         s_advertising = false;
         ESP_LOGE(TAG, "adv set fields failed rc=%d", rc);
+        advertising_retry_schedule();
         return;
     }
 
@@ -744,6 +786,7 @@ static void start_advertising(void) {
         set_last_error(error);
         s_advertising = false;
         ESP_LOGE(TAG, "adv rsp set fields failed rc=%d", rc);
+        advertising_retry_schedule();
         return;
     }
 
@@ -765,16 +808,19 @@ static void start_advertising(void) {
         set_last_error(error);
         s_advertising = false;
         ESP_LOGE(TAG, "adv start failed rc=%d", rc);
+        advertising_retry_schedule();
         return;
     }
 
     clear_last_error();
     s_advertising = true;
+    advertising_retry_cancel();
+    s_advertising_retry_count = 0;
     ESP_LOGI(TAG, "advertising started name=%s", s_device_name);
 }
 
 static void on_sync(void) {
-    s_synced = true;
+    s_synced = false;
     int rc = ble_hs_id_infer_auto(0, &s_own_addr_type);
     if (rc != 0) {
         char error[64];
@@ -785,18 +831,24 @@ static void on_sync(void) {
     }
 
     clear_last_error();
+    s_synced = true;
+    s_advertising_retry_count = 0;
     start_advertising();
 }
 
 static void on_reset(int reason) {
     s_synced = false;
+    s_advertising = false;
+    s_connection_handle = BLE_HS_CONN_HANDLE_NONE;
+    s_notify_enabled = false;
+    advertising_retry_cancel();
     ESP_LOGW(TAG, "host reset reason=%d", reason);
 }
 
 static void ble_host_task(void *param) {
     (void)param;
     nimble_port_run();
-    nimble_port_freertos_deinit();
+    vTaskDelete(NULL);
 }
 
 static const char *current_transport_state_name(void) {
@@ -905,7 +957,8 @@ static void ble_command_task(void *param) {
 
 esp_err_t taby_ble_transport_init(const taby_identity_t *identity) {
     if (s_started) {
-        return ESP_OK;
+        /* A failed shutdown must be completed before this host can be reused. */
+        return s_desired_active ? ESP_OK : ESP_ERR_INVALID_STATE;
     }
 
     clear_last_error();
@@ -1026,14 +1079,42 @@ esp_err_t taby_ble_transport_init(const taby_identity_t *identity) {
         }
     }
 
-    nimble_port_freertos_init(ble_host_task);
+    rc = ble_npl_callout_init(
+        &s_advertising_retry, nimble_port_get_dflt_eventq(), advertising_retry_fire, NULL);
+    if (rc != 0) {
+        set_last_error("advertising_retry_init_failed");
+        nimble_port_deinit();
+        s_nimble_initialized = false;
+        reset_transport_runtime_state();
+        return ESP_ERR_NO_MEM;
+    }
+    s_advertising_retry_initialized = true;
+    s_advertising_retry_count = 0;
+    s_desired_active = true;
     s_started = true;
-    clear_last_error();
+    /* Publish readiness before host launch: sync can run immediately. Do not
+     * clear an advertising failure recorded by that asynchronous callback. */
+    /* IDF 5.4's wrapper discards xTaskCreatePinnedToCore's result. Own this
+     * launch so an allocation failure cannot masquerade as a ready host. */
+    if (xTaskCreatePinnedToCore(
+            ble_host_task, "nimble_host", NIMBLE_HS_STACK_SIZE, NULL,
+            configMAX_PRIORITIES - 4, NULL, NIMBLE_CORE) != pdPASS) {
+        set_last_error("host_task_create_failed");
+        s_desired_active = false;
+        ble_npl_callout_deinit(&s_advertising_retry);
+        s_advertising_retry_initialized = false;
+        nimble_port_deinit();
+        s_nimble_initialized = false;
+        reset_transport_runtime_state();
+        return ESP_ERR_NO_MEM;
+    }
     ESP_LOGI(TAG, "nimble transport ready name=%s", s_device_name);
     return ESP_OK;
 }
 
 esp_err_t taby_ble_transport_shutdown(void) {
+    s_desired_active = false;
+    advertising_retry_cancel();
     if (!s_started && !s_nimble_initialized) {
         return ESP_OK;
     }
@@ -1062,11 +1143,19 @@ esp_err_t taby_ble_transport_shutdown(void) {
     if (s_started) {
         int stop_rc = nimble_port_stop();
         if (stop_rc != 0) {
+            char error[64];
+            snprintf(error, sizeof(error), "nimble_port_stop_rc_%d", stop_rc);
+            set_last_error(error);
             ESP_LOGE(TAG, "nimble_port_stop failed rc=%d", stop_rc);
             return ESP_FAIL;
         }
     }
 
+    /* The host is stopped, so no queued retry can outlive its NPL resources. */
+    if (s_advertising_retry_initialized) {
+        ble_npl_callout_deinit(&s_advertising_retry);
+        s_advertising_retry_initialized = false;
+    }
     if (s_nimble_initialized) {
         nimble_port_deinit();
         s_nimble_initialized = false;
@@ -1085,7 +1174,7 @@ esp_err_t taby_ble_transport_shutdown(void) {
 }
 
 void taby_ble_transport_ensure_advertising(void) {
-    if (!s_started || !s_synced) {
+    if (!s_desired_active || !s_started || !s_synced) {
         return;
     }
 
@@ -1097,7 +1186,7 @@ void taby_ble_transport_ensure_advertising(void) {
 }
 
 bool taby_ble_transport_is_ready(void) {
-    return s_started;
+    return s_desired_active && s_started;
 }
 
 bool taby_ble_transport_is_advertising(void) {
