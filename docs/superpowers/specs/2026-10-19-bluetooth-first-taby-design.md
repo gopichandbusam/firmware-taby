@@ -1,6 +1,6 @@
 # Bluetooth-first Physical Taby design
 
-Status: Proposed for owner approval
+Status: Approved by owner on 2026-10-19
 
 Date: 2026-10-19
 
@@ -70,6 +70,11 @@ eye-motion controls over Bluetooth.
 8. Keep USB available for flashing, recovery, verification, and firmware
    updates.
 9. Preserve every existing USB command and reply.
+10. Accept every animation ID in the selected board's checked-in asset manifest
+    over BLE, including intro-to-loop sequences supported by the shared parser.
+11. Remember the app-managed Bluetooth pairing and reconnect without repeating
+    setup after app restart, device restart, ordinary cable removal, power loss,
+    or battery depletion once power is restored.
 
 ## Non-goals for the first release
 
@@ -105,6 +110,12 @@ eye-motion controls over Bluetooth.
 9. The device returns to the ordinary Taby face and receives normal app output
    over BLE.
 
+"Paired" in this compatibility release means the Taby app remembers the
+CoreBluetooth peripheral ID together with the board's stable Taby device ID.
+Taby 1.0.13 does not perform an operating-system BLE bond or passkey exchange,
+so adding encrypted OS-level bonding would require coordinated app changes and
+is not part of this firmware-only release.
+
 USB remains physically usable throughout. It is not the active presentation
 transport after the Bluetooth handoff, but it remains the recovery channel.
 
@@ -120,6 +131,17 @@ transport after the Bluetooth handoff, but it remains the recovery channel.
   existing reconnect behavior; ephemeral animations are not restored.
 - Disconnecting one Mac makes the board available to the other Mac. Only one
   BLE controller is accepted at a time.
+- App restart and device reboot must reconnect from remembered identities
+  without USB setup.
+- If the board loses power or its battery is depleted, it cannot operate until
+  power is restored. After power returns, it must boot into the persisted
+  Bluetooth mode and reconnect without repeating setup.
+- If USB was the board's only power source, cable removal is a power loss. With
+  battery or other power present, cable removal must not interrupt BLE.
+- Taby 1.0.13 searches automatically for a remembered device during its bounded
+  discovery window. After a long outage, reopening the app or choosing its
+  existing look-for-device action may be required, but USB setup and re-pairing
+  must not be required.
 
 ### Recovery
 
@@ -218,6 +240,9 @@ The app binary is the authority for this personal compatibility build.
 - `CLEAR` compatibility continues through the app's existing `S` command.
 - UI commands, timers, choices, and animation IDs continue to use the shared
   transport parser/runtime rather than separate BLE behavior.
+- BLE must not maintain a separate animation allowlist. Every ID and
+  `intro>loop` sequence accepted by the selected board's asset manifest and
+  shared parser must be accepted through the command characteristic.
 
 ## Firmware changes
 
@@ -292,6 +317,9 @@ That review is intentionally outside this firmware-only first release.
   preference.
 - Devices already persisted to Bluetooth start the completed protocol-2 service
   after updating.
+- The Bluetooth preference must be committed to NVS before the USB command that
+  enables it reports success. A subsequent cold boot must not be overwritten by
+  the factory USB shipping default.
 - Firmware downgrade may leave `bluetooth` persisted on a version without the
   complete contract. USB remains available to restore `usb` as the default.
 - The Mac app may remember a CoreBluetooth peripheral per computer. The board's
@@ -310,6 +338,13 @@ That review is intentionally outside this firmware-only first release.
 - GATT table contains `0001` through `0007` with the required access flags.
 - `bluetooth_v2` appears in USB `INFO` only when its contract is available.
 - Existing USB/protocol/eye-motion tests remain green.
+- A manifest-driven test sends every animation ID through the same BLE command
+  handler seam and asserts it is accepted, without copying the catalog into the
+  test.
+- A sequence test covers every catalogued intro/loop relation supported by the
+  manifest/shared parser.
+- Preference tests cover successful NVS persistence, failed persistence without
+  a false success reply, and boot selection after a simulated cold restart.
 - `python tools/check.py` passes.
 - `python -m unittest discover -s tests -v` passes.
 - Clean ESP-IDF builds pass for `amoled-1.64`, `amoled-1.64-v2`, and
@@ -326,6 +361,8 @@ Using the installed Taby 1.0.13 Bluetooth helper:
 5. The app remembers the peripheral and reconnects after app restart.
 6. Wrong/missing identity and choice characteristics fail without corrupting
    USB operation.
+7. Every animation ID in `assets/amoled-1.64/manifest.json` is sent through the
+   BLE command/event exchange and receives a successful reply.
 
 ### Physical board tests
 
@@ -338,8 +375,17 @@ On the `amoled-1.64-v2` board:
 - show a two-choice prompt and receive left/right selections;
 - read and change display orientation;
 - disconnect/reconnect the Mac without rebooting;
+- quit and reopen the app, then reconnect without USB or repeated setup;
+- reboot the board, then reconnect without USB or repeated setup;
+- remove and restore board power, then reconnect without repeated setup;
+- run the battery down or simulate the same cold-power condition, restore
+  power, then reconnect without repeated setup;
+- remove the USB cable while battery/alternate power remains and confirm the
+  BLE session continues;
 - close the personal Mac connection and connect from the work Mac;
 - power-cycle and reconnect using the saved Bluetooth preference;
+- run a manifest-driven sweep of every 1.64-inch animation ID over the installed
+  app/helper BLE path and record any refusal or render failure;
 - connect USB and restore USB as the default;
 - verify USB flashing still works after Bluetooth use; and
 - visually confirm the AMOLED output after the final build.
@@ -355,6 +401,9 @@ The first release is complete when:
 - the device connects and reconnects over BLE with the same identity as USB;
 - animations, cards, timers, clear, choices, and orientation work through the
   installed app;
+- every animation in the selected board's asset manifest is accepted over BLE;
+- app restart, board restart, restored power after an outage/depleted battery,
+  and cable removal do not require repeating Bluetooth setup;
 - the other Mac can connect after the first Mac disconnects;
 - no existing USB behavior regresses;
 - all host checks and all three target builds pass;

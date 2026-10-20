@@ -228,3 +228,25 @@ alone does not prove that the display or artwork is correct.
   resolves it by mapping the primary action to the app's `left` choice.
 - No firmware implementation was started. The complete design awaits owner
   approval before implementation planning.
+
+### Bluetooth-first plan approval stage
+
+- The owner approved the design and added explicit durability requirements:
+  all animations must work over BLE; the app must remember the board; and the
+  system must recover after app/device restart, power loss, battery depletion,
+  or cable removal once power is available again.
+- Clarified the physical limit: if USB is the only power source, unplugging it
+  turns the board off. With battery/alternate power, BLE should continue; with
+  no alternate power, persisted BLE must return after repower without repeating
+  USB setup.
+- Three parallel planning reviews audited protocol compatibility, NVS/boot
+  ordering, and the physical failure matrix. They identified the atomic
+  `TRANSPORT_MODE bluetooth` / `TRANSPORT_DEFAULT bluetooth` boundary as the
+  highest-risk implementation point.
+- Wrote the implementation plan at
+  `docs/superpowers/plans/2026-10-19-bluetooth-first-taby.md`. It uses host-first
+  tests, the installed Taby 1.0.13 native helper, clean builds for all three
+  boards, an 84-animation BLE sweep, restart/power/cable tests, and USB recovery
+  before delivery to personal `main`.
+- Firmware source changes have not started. The plan awaits the owner's final
+  confirmation.
